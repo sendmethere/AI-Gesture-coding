@@ -1,7 +1,14 @@
 # AI Gesture Coding for Microteaching
 
 마이크로티칭 영상에서 교사의 제스처를 자동으로 분석하여 시간대별 제스처 코드를
-생성하는 연구 지원 도구입니다. (plan.md 기반 구현)
+생성하는 연구 지원 도구입니다.
+
+## 데모 영상
+
+[![데모 영상](https://img.youtube.com/vi/ZcG5vBY9zgw/maxresdefault.jpg)](https://youtu.be/ZcG5vBY9zgw)
+
+> 썸네일을 클릭하면 YouTube에서 재생됩니다. (GitHub README는 인라인 영상 재생을
+> 지원하지 않아 썸네일 링크 방식을 사용합니다.)
 
 ## 주요 기능
 
