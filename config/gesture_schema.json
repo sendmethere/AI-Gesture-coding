@@ -1,0 +1,68 @@
+{
+  "gestures": [
+    {
+      "name": "Deictic",
+      "description": "Pointing at a general object or location with hand or arm. If the target is a screen/board use PointScreen; if it is the audience use PointAudience."
+    },
+    {
+      "name": "PointScreen",
+      "description": "Pointing at a specific part of the screen, board, or material with hand, arm, or a pointer."
+    },
+    {
+      "name": "PointAudience",
+      "description": "Pointing at students or the audience with hand or arm (e.g., nominating a specific student)."
+    },
+    {
+      "name": "Beat",
+      "description": "Short, repeated hand movements in rhythm with speech for emphasis (beats). Rhythm/stress is the purpose, not meaning. Do not code small or incidental hand motion."
+    },
+    {
+      "name": "Iconic",
+      "description": "Depicting the shape, size, or motion of a concrete object with the hands."
+    },
+    {
+      "name": "Metaphoric",
+      "description": "Representing an abstract concept through space or form (e.g., splitting past/future to left/right)."
+    },
+    {
+      "name": "Emblematic",
+      "description": "A conventional symbolic gesture with a fixed cultural meaning (thumbs-up, OK sign, raised palm meaning 'stop')."
+    },
+    {
+      "name": "OpenPalm",
+      "description": "Presenting with an open palm (palm up/forward) without raising the arm above the shoulder. If directed at the audience, use OpenPalmAudience instead."
+    },
+    {
+      "name": "OpenPalmAudience",
+      "description": "Showing an open palm toward the audience/students to offer the floor, invite, or present (e.g., 'please speak' with palm facing the audience)."
+    },
+    {
+      "name": "RaiseHand",
+      "description": "Raising the arm above shoulder height to draw attention, signal stop, or nominate. Judged by the arm being raised, regardless of palm direction."
+    },
+    {
+      "name": "Writing",
+      "description": "Writing or drawing directly on a board, whiteboard, or tablet (board work)."
+    },
+    {
+      "name": "LookAtScreen",
+      "description": "Turning gaze, head, or upper body toward the screen or board to look at it (without pointing). If pointing, use PointScreen."
+    },
+    {
+      "name": "TurnBack",
+      "description": "Turning one's back to the audience (typically while writing on the board or operating the screen)."
+    },
+    {
+      "name": "Cohesive",
+      "description": "Pointing again at a previously mentioned target or location to link the discourse."
+    },
+    {
+      "name": "Nodding",
+      "description": "Nodding the head up and down to indicate agreement or affirmation."
+    },
+    {
+      "name": "HeadShake",
+      "description": "Shaking the head side to side to indicate disagreement or negation."
+    }
+  ]
+}

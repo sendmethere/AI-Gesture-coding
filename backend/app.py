@@ -1,0 +1,237 @@
+"""FastAPI application: serves the frontend and the analysis API."""
+import mimetypes
+import os
+import shutil
+from pathlib import Path
+from typing import Optional
+
+from fastapi import FastAPI, Request, UploadFile, File, HTTPException
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    StreamingResponse,
+    Response,
+)
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from . import csv_export, schema_store, settings_store
+from .paths import FRONTEND_DIR, VIDEOS_DIR, STRIPS_DIR, ensure_dirs
+from .pipeline import JOB
+
+ensure_dirs()
+
+app = FastAPI(title="AI Gesture Coding for Microteaching")
+
+# Holds the path of the currently loaded video (for playback + analysis).
+STATE = {"video_path": None}
+
+
+# --------------------------------------------------------------------------- #
+# Schema
+# --------------------------------------------------------------------------- #
+@app.get("/api/schema")
+def get_schema():
+    return schema_store.load_schema()
+
+
+class SchemaBody(BaseModel):
+    gestures: list
+
+
+@app.post("/api/schema")
+def post_schema(body: SchemaBody):
+    try:
+        return schema_store.save_schema(body.dict())
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+# --------------------------------------------------------------------------- #
+# Settings
+# --------------------------------------------------------------------------- #
+@app.get("/api/settings")
+def get_settings():
+    return settings_store.public_settings()
+
+
+class SettingsBody(BaseModel):
+    provider: Optional[str] = None
+    model: Optional[str] = None
+    api_key: Optional[str] = None
+    interval: Optional[float] = None
+    segment_frames: Optional[int] = None
+    start_offset: Optional[float] = None
+    max_duration: Optional[float] = None
+    min_confidence: Optional[float] = None
+    include_confidence: Optional[bool] = None
+    save_strips: Optional[bool] = None
+
+
+@app.post("/api/settings")
+def post_settings(body: SettingsBody):
+    patch = {k: v for k, v in body.dict().items() if v is not None}
+    settings_store.save_settings(patch)
+    return settings_store.public_settings()
+
+
+# --------------------------------------------------------------------------- #
+# Video load / upload / stream
+# --------------------------------------------------------------------------- #
+class LoadVideoBody(BaseModel):
+    path: str
+
+
+@app.post("/api/load-video")
+def load_video(body: LoadVideoBody):
+    p = Path(body.path)
+    if not p.exists() or not p.is_file():
+        raise HTTPException(400, f"file not found: {body.path}")
+    STATE["video_path"] = str(p.resolve())
+    return {"video_path": STATE["video_path"], "name": p.name}
+
+
+@app.post("/api/upload")
+async def upload_video(file: UploadFile = File(...)):
+    VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = VIDEOS_DIR / file.filename
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    STATE["video_path"] = str(dest.resolve())
+    return {"video_path": STATE["video_path"], "name": file.filename}
+
+
+@app.get("/api/current-video")
+def current_video():
+    p = STATE["video_path"]
+    return {"video_path": p, "name": Path(p).name if p else None}
+
+
+def _range_stream(path: str, request: Request) -> Response:
+    file_size = os.path.getsize(path)
+    media = mimetypes.guess_type(path)[0] or "application/octet-stream"
+    range_header = request.headers.get("range")
+    if range_header is None:
+        return FileResponse(path, media_type=media)
+
+    try:
+        units, rng = range_header.split("=")
+        start_s, end_s = rng.split("-")
+        start = int(start_s) if start_s else 0
+        end = int(end_s) if end_s else file_size - 1
+    except Exception:
+        start, end = 0, file_size - 1
+    end = min(end, file_size - 1)
+    start = max(0, start)
+    length = end - start + 1
+
+    def iter_file(chunk=1024 * 512):
+        with open(path, "rb") as f:
+            f.seek(start)
+            remaining = length
+            while remaining > 0:
+                data = f.read(min(chunk, remaining))
+                if not data:
+                    break
+                remaining -= len(data)
+                yield data
+
+    headers = {
+        "Content-Range": f"bytes {start}-{end}/{file_size}",
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(length),
+    }
+    return StreamingResponse(
+        iter_file(), status_code=206, headers=headers, media_type=media
+    )
+
+
+@app.get("/api/video")
+def stream_video(request: Request):
+    p = STATE["video_path"]
+    if not p or not os.path.exists(p):
+        raise HTTPException(404, "no video loaded")
+    return _range_stream(p, request)
+
+
+# --------------------------------------------------------------------------- #
+# Analysis control
+# --------------------------------------------------------------------------- #
+@app.post("/api/analyze")
+def start_analysis():
+    if not STATE["video_path"] or not os.path.exists(STATE["video_path"]):
+        raise HTTPException(400, "no video loaded")
+    if JOB.is_running():
+        raise HTTPException(409, "analysis already running")
+    settings = settings_store.load_settings()
+    try:
+        JOB.start(STATE["video_path"], settings)
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    return {"status": "running"}
+
+
+@app.post("/api/stop")
+def stop_analysis():
+    JOB.request_stop()
+    return {"status": "stopping"}
+
+
+@app.get("/api/status")
+def status(since: int = 0):
+    return JOB.snapshot(since)
+
+
+@app.get("/api/strip/{no}")
+def get_strip(no: int):
+    """Serve the combined 6-frame strip image that was sent to the LLM."""
+    p = STATE["video_path"]
+    if not p:
+        raise HTTPException(404, "no video loaded")
+    f = STRIPS_DIR / Path(p).stem / f"seg_{no:04d}.png"
+    if not f.exists():
+        raise HTTPException(
+            404, "strip not found (분석 옵션에서 strip 저장이 꺼져 있을 수 있습니다)"
+        )
+    return FileResponse(f, media_type="image/png")
+
+
+class UpdateResultBody(BaseModel):
+    index: int
+    gestures: list
+
+
+@app.post("/api/result/update")
+def update_result(body: UpdateResultBody):
+    updated = JOB.update_result(body.index, [str(g) for g in body.gestures])
+    if updated is None:
+        raise HTTPException(404, "result index out of range")
+    return updated
+
+
+# --------------------------------------------------------------------------- #
+# CSV export
+# --------------------------------------------------------------------------- #
+@app.get("/api/export")
+def export_csv(confidence: bool = False, download: bool = False):
+    snap = JOB.snapshot(0)
+    results = snap["results"]
+    if not results:
+        raise HTTPException(400, "no results to export")
+    path = csv_export.save_csv(results, include_confidence=confidence)
+    if download:
+        return FileResponse(
+            path, media_type="text/csv", filename="gesture_result.csv"
+        )
+    return {"path": path, "rows": len(results)}
+
+
+# --------------------------------------------------------------------------- #
+# Frontend (mounted last so /api/* wins)
+# --------------------------------------------------------------------------- #
+@app.get("/")
+def index():
+    return FileResponse(FRONTEND_DIR / "index.html")
+
+
+app.mount("/", StaticFiles(directory=str(FRONTEND_DIR)), name="static")

@@ -1,0 +1,4 @@
+# Optional: automatic teacher detection / cropping.
+# The app works without this (it falls back to using the full frame),
+# but installing it improves analysis quality.
+ultralytics>=8.1

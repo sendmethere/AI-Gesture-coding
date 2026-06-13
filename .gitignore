@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime working dirs (generated)
+videos/
+crops/
+strips/
+results/
+logs/
+
+# Video files (never commit footage), anywhere in the tree
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+
+# Local settings may contain an API key
+config/settings.json
+
+# YOLO weights
+*.pt
+
+# Internal planning doc (not for the public repo)
+plan.md
+
+# OS
+.DS_Store
+
+# Internal handoff doc (not for the public repo)
+HANDOFF.md

@@ -1,0 +1,17 @@
+# Core backend
+fastapi>=0.110
+uvicorn>=0.27
+python-multipart>=0.0.9
+pywebview>=4.4
+
+# Vision / video / imaging
+opencv-python>=4.9
+pillow>=10.0
+numpy>=1.26
+
+# LLM HTTP calls
+requests>=2.31
+
+# Optional teacher detection (YOLO) is NOT installed by default because it is
+# heavy. Install it separately when you want automatic teacher cropping:
+#   pip install -r requirements-yolo.txt
