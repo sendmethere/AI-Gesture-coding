@@ -13,6 +13,9 @@ logs/
 transcripts/
 prompts/
 
+# Documentation
+docs/
+
 # Video files (never commit footage), anywhere in the tree
 *.mp4
 *.mov

@@ -44,6 +44,24 @@ def results_to_csv(results: List[dict], include_confidence: bool = False) -> str
     return buf.getvalue()
 
 
+def human_to_csv(rows: List[dict], coder: str) -> str:
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["no", "timestamp", "coder", "gesture"])
+    for r in rows:
+        gesture = json.dumps(r.get("gesture", []), ensure_ascii=False)
+        writer.writerow([r.get("no"), r.get("timestamp"), coder, gesture])
+    return buf.getvalue()
+
+
+def save_human_csv(rows: List[dict], coder: str, name: str) -> str:
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    text = human_to_csv(rows, coder)
+    target = RESULTS_DIR / name
+    target.write_text(text, encoding="utf-8")
+    return str(target)
+
+
 def save_csv(
     results: List[dict], include_confidence: bool = False, name: str = ""
 ) -> str:

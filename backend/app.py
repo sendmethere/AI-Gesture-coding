@@ -267,6 +267,27 @@ def export_csv(confidence: bool = False, download: bool = False, name: str = "")
     return {"path": path, "rows": len(results), "name": fname}
 
 
+class HumanExportBody(BaseModel):
+    coder: Optional[str] = ""
+    rows: list
+
+
+@app.post("/api/human-export")
+def human_export(body: HumanExportBody):
+    """Save a human coder's per-window codes to results/{video}_human_{coder}_{ts}.csv."""
+    if not body.rows:
+        raise HTTPException(400, "no human codings to export")
+    coder_raw = (body.coder or "").strip()
+    coder_safe = re.sub(r"[^\w.\-]+", "_", coder_raw).strip("_") or "coder"
+    p = STATE["video_path"]
+    stem = Path(p).stem if p else "gesture"
+    stem = re.sub(r"[^\w.\-]+", "_", stem).strip("_") or "gesture"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    fname = f"{stem}_human_{coder_safe}_{ts}.csv"
+    path = csv_export.save_human_csv(body.rows, coder_raw or coder_safe, fname)
+    return {"path": path, "rows": len(body.rows), "name": fname}
+
+
 # --------------------------------------------------------------------------- #
 # Frontend (mounted last so /api/* wins)
 # --------------------------------------------------------------------------- #

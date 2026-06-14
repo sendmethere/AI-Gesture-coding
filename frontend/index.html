@@ -9,6 +9,10 @@
 <body>
   <header class="topbar">
     <div class="brand">🎬 AI Gesture Coding <span data-i18n="brandSub">for Microteaching</span></div>
+    <div class="modeswitch">
+      <button id="modeAi" class="modebtn active" data-i18n="modeAi">AI 코딩</button>
+      <button id="modeHuman" class="modebtn" data-i18n="modeHuman">인간 코딩</button>
+    </div>
     <div class="topright">
       <div id="detectorBadge" class="badge">detector: —</div>
       <button id="langToggle" class="langbtn" title="한국어 / English">EN</button>
@@ -25,7 +29,7 @@
         <div id="videoName" class="muted" data-i18n="noVideo">선택된 영상 없음</div>
       </section>
 
-      <section class="card">
+      <section class="card ai-only">
         <h2 data-i18n="secLLM">2. LLM 설정</h2>
         <label data-i18n="lblProvider">Provider</label>
         <select id="provider">
@@ -48,7 +52,7 @@
         <button id="saveSettingsBtn" class="btn ghost" data-i18n="btnSaveSettings">설정 저장</button>
       </section>
 
-      <section class="card">
+      <section class="card ai-only">
         <h2 data-i18n="secSchema">3. 제스처 분류체계</h2>
         <div id="schemaList" class="chips"></div>
         <button id="editSchemaBtn" class="btn ghost" data-i18n="btnEditSchema">JSON 편집</button>
@@ -74,6 +78,7 @@
         </div>
         <label><span data-i18n="lblMaxDur">분석 길이 제한(초)</span> <span class="muted" data-i18n="hintMaxDur">· 시작점부터 · 0 = 끝까지</span></label>
         <input id="maxDuration" type="number" step="1" min="0" value="60" />
+        <div class="ai-only">
         <label><span data-i18n="lblMinConf">최소 신뢰도</span> <span class="muted" data-i18n="hintMinConf">· 이하면 None 처리 · 0 = 끔</span></label>
         <input id="minConfidence" type="number" step="0.05" min="0" max="1" value="0" />
         <label class="check">
@@ -113,9 +118,10 @@
           </div>
         </div>
         <div class="muted small" data-i18n="hintStt">· faster-whisper 설치 필요 · 첫 실행 시 모델 다운로드 · 결과는 윈도우별 발화로 부착</div>
+        </div>
       </section>
 
-      <section class="card actions">
+      <section class="card actions ai-only">
         <button id="startBtn" class="btn primary" data-i18n="btnStart">▶ 분석 시작</button>
         <button id="stopBtn" class="btn danger" data-i18n="btnStop" disabled>■ 중지</button>
         <button id="overviewBtn" class="btn" data-i18n="btnOverview">🔍 Overview (이미지+코드)</button>
@@ -141,6 +147,8 @@
 
     <!-- RIGHT: results -->
     <aside class="panel right">
+      <!-- AI coding mode: results + log -->
+      <div id="aiPanel">
       <div class="tabs">
         <button class="tab active" data-tab="results" data-i18n="tabResults">결과</button>
         <button class="tab" data-tab="log" data-i18n="tabLog">로그</button>
@@ -165,6 +173,44 @@
       <div id="tab-log" class="tab-body" hidden>
         <pre id="logBox" class="log"></pre>
       </div>
+      </div><!-- /aiPanel -->
+
+      <!-- Human coding mode -->
+      <div id="humanPanel" hidden>
+        <div class="human-coding">
+          <label class="hc-field">
+            <span data-i18n="lblCoder">코더 이름</span>
+            <input id="coderName" type="text" data-i18n-ph="phCoder" placeholder="이름 입력" />
+          </label>
+
+          <div class="hc-winbar">
+            <button id="hcPrev" class="btn hc-stepbtn" title="이전 윈도우">◀</button>
+            <span id="hcWindowLabel" class="hc-winlabel">—</span>
+            <button id="hcNext" class="btn hc-stepbtn" title="다음 윈도우">▶</button>
+          </div>
+
+          <div class="hc-playbar">
+            <button id="hcPlay" class="btn primary" data-i18n="btnPlayWindow">▶ 이 구간 재생</button>
+            <label class="hc-speed">
+              <span data-i18n="lblSpeed">배속</span>
+              <select id="hcSpeed">
+                <option value="1">1.0x</option>
+                <option value="0.8" selected>0.8x</option>
+                <option value="0.5">0.5x</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="hc-codes-label muted small" data-i18n="hcCodesLabel">이 구간의 제스처 코드 (없으면 빈 상태로 저장 = GT-N)</div>
+          <div id="hcCodes" class="hc-codes"></div>
+
+          <div class="hc-actions">
+            <button id="hcSaveNext" class="btn primary" data-i18n="btnSaveNext">저장 &amp; 다음 ▶</button>
+            <button id="hcExport" class="btn" data-i18n="btnExportHuman">⬇ 인간 코딩 CSV</button>
+          </div>
+          <div id="hcProgress" class="muted small"></div>
+        </div>
+      </div><!-- /humanPanel -->
     </aside>
   </main>
 
@@ -213,7 +259,7 @@
   <div id="overviewModal" class="modal" hidden>
     <div class="modal-card overview">
       <div class="overview-head">
-        <h3><span data-i18n="ovTitle">Overview — AI 전송 이미지 + 코드</span> <span id="overviewCount" class="muted"></span></h3>
+        <h3><span data-i18n="ovTitle">Overview</span> <span id="overviewCount" class="muted"></span></h3>
         <button id="overviewClose" class="btn primary" data-i18n="btnClose">닫기</button>
       </div>
       <p class="muted" data-i18n="ovDesc">각 구간에 AI로 보낸 strip(6프레임)과 자동 코딩 결과입니다. 스크롤하여 확인하세요.</p>

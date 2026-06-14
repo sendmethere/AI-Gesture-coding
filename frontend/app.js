@@ -14,6 +14,7 @@ const api = (p, opts) => fetch(p, opts).then(async (r) => {
 // ------------------------------------------------------------------- i18n ---
 const STRINGS = {
   ko: {
+    modeAi: "AI 코딩", modeHuman: "인간 코딩",
     brandSub: "마이크로티칭",
     secVideo: "1. 영상", btnSelectVideo: "영상 선택…", noVideo: "선택된 영상 없음",
     secLLM: "2. LLM 설정", lblProvider: "Provider",
@@ -40,7 +41,17 @@ const STRINGS = {
     btnStart: "▶ 분석 시작", btnStop: "■ 중지",
     btnOverview: "🔍 Overview (이미지+코드)", btnExport: "⬇ CSV 내보내기",
     playerEmpty: "영상을 선택하면 여기서 재생됩니다.",
-    tabResults: "결과", tabLog: "로그",
+    tabResults: "결과", tabHuman: "인간 코딩", tabLog: "로그",
+    lblCoder: "코더 이름", phCoder: "이름 입력",
+    btnPlayWindow: "▶ 이 구간 재생", lblSpeed: "배속",
+    hcCodesLabel: "이 구간의 제스처 코드 (없으면 빈 상태로 저장 = GT-N)",
+    btnSaveNext: "저장 & 다음 ▶", btnExportHuman: "⬇ 인간 코딩 CSV",
+    hcNeedVideo: "먼저 영상을 불러오세요.",
+    hcWindow: "#{0} · {1} ~ {2}",
+    hcProgress: "현재 {0} / 총 {1} · 코딩 완료 {2}개",
+    toastHumanSaved: "저장됨: {0} ({1}행)", errHumanExport: "내보내기 실패: {0}",
+    hcNothing: "저장(다음)으로 표시한 구간이 없습니다.",
+    hcDoneToast: "마지막 윈도우입니다.",
     thTime: "시간", thGesture: "제스처", thConf: "신뢰도", resultsEmpty: "아직 결과가 없습니다.",
     schemaTitle: "제스처 분류체계 (gesture_schema.json)",
     schemaDesc: "name/description 을 자유롭게 추가·수정하세요. 저장 시 즉시 반영됩니다.",
@@ -71,6 +82,7 @@ const STRINGS = {
     doneToast: "분석 완료 ({0} segments)", errorToast: "오류: {0}",
   },
   en: {
+    modeAi: "AI coding", modeHuman: "Human coding",
     brandSub: "for Microteaching",
     secVideo: "1. Video", btnSelectVideo: "Select Video…", noVideo: "No video selected",
     secLLM: "2. LLM Settings", lblProvider: "Provider",
@@ -97,7 +109,17 @@ const STRINGS = {
     btnStart: "▶ Start", btnStop: "■ Stop",
     btnOverview: "🔍 Overview (images+codes)", btnExport: "⬇ Export CSV",
     playerEmpty: "Select a video to play it here.",
-    tabResults: "Results", tabLog: "Log",
+    tabResults: "Results", tabHuman: "Human coding", tabLog: "Log",
+    lblCoder: "Coder name", phCoder: "Enter name",
+    btnPlayWindow: "▶ Play this window", lblSpeed: "Speed",
+    hcCodesLabel: "Gesture codes for this window (leave empty to save as GT-N)",
+    btnSaveNext: "Save & next ▶", btnExportHuman: "⬇ Human coding CSV",
+    hcNeedVideo: "Load a video first.",
+    hcWindow: "#{0} · {1} ~ {2}",
+    hcProgress: "Now {0} / {1} total · {2} coded",
+    toastHumanSaved: "Saved: {0} ({1} rows)", errHumanExport: "Export failed: {0}",
+    hcNothing: "No windows marked via Save/Next yet.",
+    hcDoneToast: "This is the last window.",
     thTime: "Timestamp", thGesture: "Gesture", thConf: "Conf.", resultsEmpty: "No results yet.",
     schemaTitle: "Gesture Schema (gesture_schema.json)",
     schemaDesc: "Add or edit name/description freely. Applied immediately on save.",
@@ -343,6 +365,11 @@ function setVideoLoaded(name) {
     player.style.display = "block";
     $("playerEmpty").style.display = "none";
     player.load();
+    // reset human-coding windows so they rebuild for the new video
+    humanWindows = [];
+    humanCodes = {};
+    hcDone = new Set();
+    hcIndex = 0;
   }
 }
 
@@ -736,10 +763,187 @@ function setupTabs() {
     tab.onclick = () => {
       document.querySelectorAll(".tab").forEach((x) => x.classList.remove("active"));
       tab.classList.add("active");
-      $("tab-results").hidden = tab.dataset.tab !== "results";
-      $("tab-log").hidden = tab.dataset.tab !== "log";
+      const name = tab.dataset.tab;
+      document.querySelectorAll(".tab-body").forEach((b) => {
+        b.hidden = b.id !== "tab-" + name;
+      });
+      if (name === "human") enterHumanTab();
     };
   });
+}
+
+// --------------------------------------------------------------- mode ------
+// Top-bar switch between the AI-coding interface and the human-coding interface.
+let MODE = localStorage.getItem("mode") || "ai";
+
+function setMode(mode) {
+  MODE = mode === "human" ? "human" : "ai";
+  localStorage.setItem("mode", MODE);
+  const human = MODE === "human";
+  document.body.classList.toggle("mode-human", human);
+  $("aiPanel").hidden = human;
+  $("humanPanel").hidden = !human;
+  $("modeAi").classList.toggle("active", !human);
+  $("modeHuman").classList.toggle("active", human);
+  if (human) enterHumanTab();
+}
+
+// Short, human-readable gloss per McNeill code, shown on the coding buttons.
+const CODE_GLOSS = {
+  "GT-D": { ko: "지시적 · 대상/방향을 가리키고 멈춤", en: "Deictic · points at a target and holds" },
+  "GT-I": { ko: "상징적 · 구체물의 형태·크기 모방", en: "Iconic · depicts a real object's form/size" },
+  "GT-M": { ko: "은유적 · 추상 개념을 공간으로 표현", en: "Metaphoric · an abstract idea in space" },
+  "GT-B": { ko: "박자적 · 말 리듬에 맞춘 반복 동작", en: "Beat · repeated strokes with speech rhythm" },
+  "GT-E": { ko: "관습적 · 약속된 사인(손들기 등)", en: "Emblematic · a fixed conventional sign" },
+  "GT-X": { ko: "판별 불가 · 움직임은 있으나 유형 불명", en: "Unclassifiable · moves, but type unclear" },
+};
+function codeGloss(g) {
+  const m = CODE_GLOSS[g.name];
+  if (m) return m[LANG] || m.en;
+  const d = g.description || "";
+  return d.length > 44 ? d.slice(0, 44) + "…" : d;
+}
+
+// ----------------------------------------------------------- human coding ---
+let humanWindows = [];      // [{no, seconds, end, timestamp}]
+let humanCodes = {};        // { windowNo: [codes] }
+let hcDone = new Set();     // window numbers marked via Save & next
+let hcIndex = 0;
+let hcPlayEnd = null;       // pause the player when currentTime reaches this
+
+function fmtTs(sec) {
+  sec = Math.max(0, Math.round(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(h)}:${p(m)}:${p(s)}`;
+}
+
+function hcStartOffset() {
+  return Math.max(0, (parseInt($("startMin").value) || 0) * 60 +
+                     (parseInt($("startSec").value) || 0));
+}
+
+// Build the window list from the same settings the AI analysis uses, so window
+// numbers line up with the AI results for later reliability comparison.
+function buildHumanWindows() {
+  const player = $("player");
+  const dur = isFinite(player.duration) ? player.duration : 0;
+  const interval = Math.max(0.1, parseFloat($("interval").value) || 0.3);
+  const segFrames = Math.max(2, parseInt($("segmentFrames").value) || 10);
+  const winLen = interval * segFrames;
+  const start = hcStartOffset();
+  const maxDur = Math.max(0, parseInt($("maxDuration").value) || 0);
+  let end = dur > 0 ? dur : start;
+  if (maxDur > 0) end = Math.min(end, start + maxDur);
+  const count = dur > 0 ? Math.max(0, Math.floor((end - start) / winLen)) : 0;
+  humanWindows = [];
+  for (let i = 0; i < count; i++) {
+    const s = start + i * winLen;
+    humanWindows.push({ no: i + 1, seconds: s, end: Math.min(s + winLen, end), timestamp: fmtTs(s) });
+  }
+  hcIndex = 0;
+}
+
+function enterHumanTab() {
+  if (humanWindows.length === 0) buildHumanWindows();
+  renderHuman();
+}
+
+function renderHuman() {
+  const w = humanWindows[hcIndex];
+  if (!w) {
+    $("hcWindowLabel").textContent = t("hcNeedVideo");
+    $("hcCodes").innerHTML = "";
+    $("hcProgress").textContent = "";
+    return;
+  }
+  $("hcWindowLabel").textContent = t("hcWindow", w.no, w.timestamp, fmtTs(w.end));
+  $("hcProgress").textContent = t("hcProgress", w.no, humanWindows.length, hcDone.size);
+  renderHumanCodes();
+}
+
+function renderHumanCodes() {
+  const w = humanWindows[hcIndex];
+  const box = $("hcCodes");
+  box.innerHTML = "";
+  if (!w) return;
+  const cur = new Set(humanCodes[w.no] || []);
+  SCHEMA.gestures.forEach((g) => {
+    const b = document.createElement("button");
+    b.className = "hc-code" + (cur.has(g.name) ? " on" : "");
+    b.title = g.description || "";
+    b.onclick = () => hcToggle(g.name);
+    const name = document.createElement("span");
+    name.className = "hc-code-name";
+    name.textContent = g.name;
+    const gloss = document.createElement("span");
+    gloss.className = "hc-code-gloss";
+    gloss.textContent = codeGloss(g);
+    b.append(name, gloss);
+    box.appendChild(b);
+  });
+}
+
+function hcToggle(code) {
+  const w = humanWindows[hcIndex];
+  if (!w) return;
+  const set = humanCodes[w.no] || (humanCodes[w.no] = []);
+  const i = set.indexOf(code);
+  if (i >= 0) set.splice(i, 1);
+  else set.push(code);
+  renderHumanCodes();
+}
+
+function hcPlayWindow() {
+  const w = humanWindows[hcIndex];
+  const player = $("player");
+  if (!w || !player.src || !isFinite(player.duration)) return;
+  player.playbackRate = parseFloat($("hcSpeed").value) || 1;
+  try {
+    player.currentTime = w.seconds;
+    hcPlayEnd = w.end;
+    player.play();
+  } catch (_) {}
+}
+
+function hcGoto(index) {
+  hcIndex = Math.max(0, Math.min(humanWindows.length - 1, index));
+  renderHuman();
+}
+
+function hcSaveNext() {
+  const w = humanWindows[hcIndex];
+  if (!w) return;
+  if (!humanCodes[w.no]) humanCodes[w.no] = []; // empty = GT-N
+  hcDone.add(w.no);
+  if (hcIndex < humanWindows.length - 1) {
+    hcIndex++;
+    renderHuman();
+    hcPlayWindow();
+  } else {
+    renderHuman();
+    toast(t("hcDoneToast"));
+  }
+}
+
+async function hcExportCsv() {
+  const rows = humanWindows
+    .filter((w) => hcDone.has(w.no))
+    .map((w) => ({ no: w.no, timestamp: w.timestamp, gesture: humanCodes[w.no] || [] }));
+  if (!rows.length) {
+    toast(t("hcNothing"));
+    return;
+  }
+  try {
+    const res = await api("/api/human-export", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ coder: $("coderName").value.trim(), rows }),
+    });
+    toast(t("toastHumanSaved", res.path, res.rows));
+  } catch (e) {
+    toast(t("errHumanExport", e.message));
+  }
 }
 
 // ------------------------------------------------------------------- init ---
@@ -766,6 +970,29 @@ function wire() {
   $("overviewBtn").onclick = openOverview;
   $("overviewClose").onclick = () => ($("overviewModal").hidden = true);
   $("langToggle").onclick = () => setLang(LANG === "ko" ? "en" : "ko");
+  // mode switch (AI coding / human coding)
+  $("modeAi").onclick = () => setMode("ai");
+  $("modeHuman").onclick = () => setMode("human");
+  // rebuild human windows once the video's duration is known
+  $("player").addEventListener("loadedmetadata", () => {
+    if (MODE === "human") { buildHumanWindows(); renderHuman(); }
+  });
+  // human coding controls
+  $("hcPrev").onclick = () => hcGoto(hcIndex - 1);
+  $("hcNext").onclick = () => hcGoto(hcIndex + 1);
+  $("hcPlay").onclick = hcPlayWindow;
+  $("hcSaveNext").onclick = hcSaveNext;
+  $("hcExport").onclick = hcExportCsv;
+  $("hcSpeed").onchange = () => {
+    $("player").playbackRate = parseFloat($("hcSpeed").value) || 1;
+  };
+  // stop window playback at the window's end point
+  $("player").addEventListener("timeupdate", () => {
+    if (hcPlayEnd != null && $("player").currentTime >= hcPlayEnd) {
+      $("player").pause();
+      hcPlayEnd = null;
+    }
+  });
   setupTabs();
 }
 
@@ -777,6 +1004,7 @@ async function init() {
     const cur = await api("/api/current-video");
     if (cur.name) setVideoLoaded(cur.name);
   } catch (_) {}
+  setMode(MODE);  // apply the saved AI / human mode
   poll();
 }
 

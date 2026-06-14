@@ -36,6 +36,13 @@ def _wait_for_server(timeout=15.0):
     return False
 
 
+def _open_dialog(webview):
+    """Open-file dialog constant. Prefer the modern FileDialog.OPEN enum
+    (pywebview >= 5); fall back to the deprecated OPEN_DIALOG on older versions."""
+    fd = getattr(webview, "FileDialog", None)
+    return fd.OPEN if fd is not None else webview.OPEN_DIALOG
+
+
 class WebviewApi:
     """Exposed to the frontend as window.pywebview.api for native dialogs."""
 
@@ -50,7 +57,7 @@ class WebviewApi:
 
         types = ("Video files (*.mp4;*.mov;*.avi;*.mkv)", "All files (*.*)")
         res = self._window.create_file_dialog(
-            webview.OPEN_DIALOG, allow_multiple=False, file_types=types
+            _open_dialog(webview), allow_multiple=False, file_types=types
         )
         return res[0] if res else None
 
@@ -59,7 +66,7 @@ class WebviewApi:
 
         types = ("JSON files (*.json)", "All files (*.*)")
         res = self._window.create_file_dialog(
-            webview.OPEN_DIALOG, allow_multiple=False, file_types=types
+            _open_dialog(webview), allow_multiple=False, file_types=types
         )
         return res[0] if res else None
 
