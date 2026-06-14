@@ -10,6 +10,8 @@ crops/
 strips/
 results/
 logs/
+transcripts/
+prompts/
 
 # Video files (never commit footage), anywhere in the tree
 *.mp4
@@ -24,8 +26,9 @@ config/settings.json
 # YOLO weights
 *.pt
 
-# Internal planning doc (not for the public repo)
+# Internal planning docs (not for the public repo)
 plan.md
+plan2.md
 
 # OS
 .DS_Store

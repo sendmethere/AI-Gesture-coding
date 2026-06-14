@@ -12,6 +12,10 @@ numpy>=1.26
 # LLM HTTP calls
 requests>=2.31
 
-# Optional teacher detection (YOLO) is NOT installed by default because it is
-# heavy. Install it separately when you want automatic teacher cropping:
+# Optional teacher detection + skeleton motion analysis (YOLO / YOLO-pose) is
+# NOT installed by default because it is heavy. Installing ultralytics enables
+# both automatic teacher cropping AND shoulder-normalized wrist tracking for the
+# motion pre-filter (plan.v2 §2-3). Without it the app still works: cropping
+# falls back to the full frame and the motion pre-filter falls back to a coarse
+# frame-difference estimate.
 #   pip install -r requirements-yolo.txt

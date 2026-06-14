@@ -23,10 +23,20 @@ const STRINGS = {
     btnSaveSettings: "설정 저장",
     secSchema: "3. 제스처 분류체계", btnEditSchema: "JSON 편집",
     secOptions: "4. 분석 옵션",
+    lblInterval: "스냅샷 간격(초)", lblSegFrames: "윈도우 크기(프레임)",
+    windowDur: "· 윈도우 길이 {0}초 ({1}프레임 × {2}초)",
     lblStartAt: "분석 시작 지점", hintStartAt: "· 분 : 초", phMin: "분", phSec: "초",
     lblMaxDur: "분석 길이 제한(초)", hintMaxDur: "· 시작점부터 · 0 = 끝까지",
     lblMinConf: "최소 신뢰도", hintMinConf: "· 이하면 None 처리 · 0 = 끔",
     lblIncludeConf: "CSV에 confidence 포함",
+    lblMotionFilter: "모션 사전필터 (토큰 절감)",
+    lblStillThr: "정지 임계값", lblStartThr: "시작 임계값",
+    hintMotion: "· 시작 임계값에 도달하는 프레임이 없으면 제스처 없음(GT-None)·AI 생략 · 골격은 YOLO-pose 설치 시 활성",
+    lblStt: "발화 전사(STT) · 윈도우별 문장",
+    lblSttModel: "STT 모델", lblSttLang: "언어",
+    hintStt: "· faster-whisper 설치 필요 · 첫 실행 시 모델 다운로드 · 결과는 윈도우별 발화로 부착",
+    speechLabel: "발화", ovNoSpeech: "(발화 없음)",
+    sttLoading: "💬 발화 전사 중… (영상에서 음성 추출 · 첫 실행 시 모델 다운로드)",
     btnStart: "▶ 분석 시작", btnStop: "■ 중지",
     btnOverview: "🔍 Overview (이미지+코드)", btnExport: "⬇ CSV 내보내기",
     playerEmpty: "영상을 선택하면 여기서 재생됩니다.",
@@ -36,8 +46,10 @@ const STRINGS = {
     schemaDesc: "name/description 을 자유롭게 추가·수정하세요. 저장 시 즉시 반영됩니다.",
     btnCancel: "취소", btnSave: "저장", editTitle: "제스처 수정", btnApply: "적용",
     stripTitle: "AI에 전송된 이미지",
-    stripDesc: "왼쪽→오른쪽, 0.5초 간격 6프레임(=3초)을 이어붙인 strip 입니다.",
-    btnClose: "닫기", ovTitle: "Overview — AI 전송 이미지 + 코드",
+    stripDesc: "왼쪽→오른쪽 순서로 이어붙인 strip 입니다. 프레임 하단 컬러바: 회색=정지 · 노랑=준비 · 초록=시작 · 파랑=진행, 숫자는 손 이동량.",
+    btnClose: "닫기", btnShowPrompt: "📝 전송 메시지 보기", btnHidePrompt: "🙈 메시지 숨기기",
+    errPromptLoad: "전송 메시지를 불러올 수 없습니다 (이 구간은 AI 호출이 없었거나 분석 전입니다).",
+    ovTitle: "Overview — AI 전송 이미지 + 코드",
     ovDesc: "각 구간에 AI로 보낸 strip(6프레임)과 자동 코딩 결과입니다. 스크롤하여 확인하세요.",
     // dynamic
     segments: "{0} / {1} 세그먼트", ovCount: "({0}개 구간)",
@@ -55,6 +67,7 @@ const STRINGS = {
     emptyTag: "— 없음", keySaved: "✓ API Key 저장됨", keyNone: "저장된 키 없음",
     phApiKeySaved: "저장된 키 사용 중 — 변경 시에만 입력",
     titleEditTag: "클릭하여 수정", titleViewStrip: "AI에 전송된 이미지 보기",
+    titleSeek: "클릭하면 이 시점으로 이동",
     doneToast: "분석 완료 ({0} segments)", errorToast: "오류: {0}",
   },
   en: {
@@ -67,10 +80,20 @@ const STRINGS = {
     btnSaveSettings: "Save Settings",
     secSchema: "3. Gesture Schema", btnEditSchema: "Edit JSON",
     secOptions: "4. Analysis Options",
+    lblInterval: "Snapshot interval (s)", lblSegFrames: "Window size (frames)",
+    windowDur: "· window {0}s ({1} frames × {2}s)",
     lblStartAt: "Start at", hintStartAt: "· min : sec", phMin: "min", phSec: "sec",
     lblMaxDur: "Length limit (sec)", hintMaxDur: "· from start · 0 = to end",
     lblMinConf: "Min confidence", hintMinConf: "· below → None · 0 = off",
     lblIncludeConf: "Include confidence in CSV",
+    lblMotionFilter: "Motion pre-filter (save tokens)",
+    lblStillThr: "Still threshold", lblStartThr: "Start threshold",
+    hintMotion: "· no frame reaching the start threshold = no gesture (GT-None), AI skipped · skeleton needs YOLO-pose",
+    lblStt: "Speech transcription (STT) · per-window text",
+    lblSttModel: "STT model", lblSttLang: "Language",
+    hintStt: "· needs faster-whisper · downloads the model on first run · attached as per-window speech",
+    speechLabel: "Speech", ovNoSpeech: "(no speech)",
+    sttLoading: "💬 Transcribing speech… (extracting audio · downloads model on first run)",
     btnStart: "▶ Start", btnStop: "■ Stop",
     btnOverview: "🔍 Overview (images+codes)", btnExport: "⬇ Export CSV",
     playerEmpty: "Select a video to play it here.",
@@ -80,8 +103,10 @@ const STRINGS = {
     schemaDesc: "Add or edit name/description freely. Applied immediately on save.",
     btnCancel: "Cancel", btnSave: "Save", editTitle: "Edit gestures", btnApply: "Apply",
     stripTitle: "Image sent to the AI",
-    stripDesc: "A strip of 6 frames at 0.5s intervals (=3s), left → right.",
-    btnClose: "Close", ovTitle: "Overview — images sent to AI + codes",
+    stripDesc: "Frames concatenated left → right. Bottom colorbar: gray=still · yellow=prep · green=start · blue=in motion; the number is hand displacement.",
+    btnClose: "Close", btnShowPrompt: "📝 Show message sent", btnHidePrompt: "🙈 Hide message",
+    errPromptLoad: "Could not load the message (this window had no AI call, or analysis hasn't run).",
+    ovTitle: "Overview — images sent to AI + codes",
     ovDesc: "Each segment's strip (6 frames) sent to the AI and its auto-coded result. Scroll to review.",
     segments: "{0} / {1} segments", ovCount: "({0} segments)",
     toastSettingsSaved: "Settings saved", toastSchemaSaved: "Schema saved",
@@ -98,6 +123,7 @@ const STRINGS = {
     emptyTag: "— none", keySaved: "✓ API Key saved", keyNone: "No saved key",
     phApiKeySaved: "Using saved key — enter only to change",
     titleEditTag: "Click to edit", titleViewStrip: "View image sent to the AI",
+    titleSeek: "Click to jump to this time",
     doneToast: "Analysis complete ({0} segments)", errorToast: "Error: {0}",
   },
 };
@@ -123,6 +149,7 @@ function applyI18n() {
   // refresh dynamic bits that hold translated text
   reflectKeyStatus(lastHasKey);
   refreshProgressLabels();
+  if ($("interval")) reflectWindowDur();
 }
 
 function setLang(l) {
@@ -139,6 +166,12 @@ let lastHasKey = false;
 let lastSnap = { done: 0, total: 0 };
 let lastSeek = -1;
 
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 function toast(msg) {
   const t = $("toast");
   t.textContent = msg;
@@ -152,25 +185,58 @@ async function loadSettings() {
   const s = await api("/api/settings");
   $("provider").value = s.provider || "mock";
   $("model").value = s.model || "";
+  $("interval").value = s.interval ?? 0.3;
+  $("segmentFrames").value = s.segment_frames ?? 10;
   const off = Math.max(0, Math.floor(s.start_offset ?? 0));
   $("startMin").value = Math.floor(off / 60);
   $("startSec").value = off % 60;
   $("maxDuration").value = s.max_duration ?? 60;
   $("minConfidence").value = s.min_confidence ?? 0;
   $("includeConf").checked = s.include_confidence ?? true;
+  $("motionFilter").checked = s.motion_filter ?? true;
+  $("stillThreshold").value = s.still_threshold ?? 0.25;
+  $("startThreshold").value = s.start_threshold ?? 0.25;
+  $("sttEnabled").checked = s.stt_enabled ?? false;
+  $("sttModel").value = s.stt_model || "base";
+  $("sttLanguage").value = s.stt_language || "";
+  reflectMotionFilter();
+  reflectStt();
+  reflectWindowDur();
   reflectKeyStatus(s.has_api_key);
+}
+
+function reflectMotionFilter() {
+  $("motionThresholds").style.opacity = $("motionFilter").checked ? "1" : "0.4";
+}
+
+function reflectWindowDur() {
+  const iv = Math.max(0.1, parseFloat($("interval").value) || 0.3);
+  const fr = Math.max(2, parseInt($("segmentFrames").value) || 10);
+  $("windowDurHint").textContent = t("windowDur", (iv * fr).toFixed(1), fr, iv);
+}
+
+function reflectStt() {
+  $("sttOpts").style.opacity = $("sttEnabled").checked ? "1" : "0.4";
 }
 
 async function saveSettings() {
   const body = {
     provider: $("provider").value,
     model: $("model").value,
+    interval: Math.max(0.1, parseFloat($("interval").value) || 0.3),
+    segment_frames: Math.max(2, parseInt($("segmentFrames").value) || 10),
     start_offset:
       Math.max(0, parseInt($("startMin").value) || 0) * 60 +
       Math.max(0, parseInt($("startSec").value) || 0),
     max_duration: Math.max(0, parseInt($("maxDuration").value) || 0),
     min_confidence: Math.min(1, Math.max(0, parseFloat($("minConfidence").value) || 0)),
     include_confidence: $("includeConf").checked,
+    motion_filter: $("motionFilter").checked,
+    still_threshold: Math.min(3, Math.max(0, parseFloat($("stillThreshold").value) || 0.25)),
+    start_threshold: Math.min(3, Math.max(0, parseFloat($("startThreshold").value) || 0.25)),
+    stt_enabled: $("sttEnabled").checked,
+    stt_model: $("sttModel").value,
+    stt_language: $("sttLanguage").value.trim(),
   };
   const key = $("apiKey").value.trim();
   if (key) body.api_key = key;
@@ -367,16 +433,30 @@ async function poll() {
   }
   lastSnap = { done: snap.done, total: snap.total };
   const pct = snap.total > 0 ? Math.round((snap.done / snap.total) * 100) : 0;
-  $("progressPct").textContent = pct + "%";
-  refreshProgressLabels();
-  $("progressFill").style.width = pct + "%";
   const pill = $("statusPill");
-  pill.textContent = snap.status;
-  pill.className = "pill " + snap.status;
   $("detectorBadge").textContent = "detector: " + (snap.detector || "—");
 
+  // First phase: speech transcription (STT) runs before any segment is coded;
+  // show an indeterminate "transcribing…" state so it doesn't look stuck at 0%.
+  const transcribing = snap.status === "running" && snap.phase === "transcribing";
+  $("progressFill").classList.toggle("loading", transcribing);
+  if (transcribing) {
+    $("progressPct").textContent = "";
+    $("progressFill").style.width = "100%";
+    $("progressCount").textContent = t("sttLoading");
+    pill.textContent = "transcribing";
+    pill.className = "pill running";
+  } else {
+    $("progressPct").textContent = pct + "%";
+    refreshProgressLabels();
+    $("progressFill").style.width = pct + "%";
+    pill.textContent = snap.status;
+    pill.className = "pill " + snap.status;
+  }
+
   // Move the preview playhead to the segment currently being analyzed.
-  if (snap.status === "running" && typeof snap.current_seconds === "number") {
+  if (snap.status === "running" && !transcribing &&
+      typeof snap.current_seconds === "number") {
     seekPreview(snap.current_seconds);
   }
 
@@ -403,12 +483,18 @@ function appendResult(row) {
   tr.dataset.index = row.no - 1;
   if (row.edited) tr.classList.add("edited");
 
+  if (row.review_flag) tr.classList.add("flagged");
+
   const tdNo = document.createElement("td");
   tdNo.className = "no";
   tdNo.textContent = row.no;
 
   const tdTs = document.createElement("td");
+  tdTs.className = "ts-cell";
   tdTs.textContent = row.timestamp;
+  tdTs.title = row.speech ? row.speech : t("titleSeek");
+  // Click the time to move the video playhead to this segment.
+  tdTs.onclick = () => seekTo(row.seconds);
 
   const tdG = document.createElement("td");
   tdG.appendChild(renderTags(row.gesture));
@@ -429,6 +515,30 @@ function appendResult(row) {
 
   tr.append(tdNo, tdTs, tdG, tdC, tdView);
   tbody.appendChild(tr);
+
+  // Speech transcript (STT) shown as a full-width sub-row under the result.
+  if (row.speech) {
+    tr.classList.add("has-speech");
+    const sr = document.createElement("tr");
+    sr.className = "speech-row";
+    if (row.review_flag) sr.classList.add("flagged");
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.innerHTML = `<span class="speechmark">💬</span> ${escapeHtml(row.speech)}`;
+    sr.appendChild(td);
+    tbody.appendChild(sr);
+  }
+}
+
+// Jump the video player to a given time (used by clicking a result's timestamp).
+function seekTo(seconds) {
+  if (typeof seconds !== "number") return;
+  const player = $("player");
+  if (!player.src || !isFinite(player.duration) || player.readyState < 1) return;
+  try {
+    player.currentTime = Math.min(seconds, Math.max(0, player.duration - 0.05));
+    lastSeek = seconds;  // keep auto-seek in sync so it doesn't fight the user
+  } catch (_) {}
 }
 
 function renderTags(gestures) {
@@ -498,7 +608,10 @@ async function saveEdit() {
 }
 
 // ----------------------------------------------------------- strip preview --
+let stripNo = null;
+
 function openStrip(no) {
+  stripNo = no;
   $("stripLabel").textContent = "#" + no;
   $("stripError").textContent = "";
   const img = $("stripImg");
@@ -508,7 +621,31 @@ function openStrip(no) {
     $("stripError").textContent = t("errStripLoad");
   };
   img.src = `/api/strip/${no}?ts=` + Date.now();
+  // reset the prompt view each time the modal opens
+  const pre = $("stripPrompt");
+  pre.hidden = true;
+  pre.textContent = "";
+  $("stripPromptBtn").textContent = t("btnShowPrompt");
   $("stripModal").hidden = false;
+}
+
+async function toggleStripPrompt() {
+  const pre = $("stripPrompt");
+  const btn = $("stripPromptBtn");
+  if (!pre.hidden) {
+    pre.hidden = true;
+    btn.textContent = t("btnShowPrompt");
+    return;
+  }
+  if (!pre.textContent) {
+    try {
+      pre.textContent = await api(`/api/prompt/${stripNo}?ts=` + Date.now());
+    } catch (e) {
+      pre.textContent = t("errPromptLoad");
+    }
+  }
+  pre.hidden = false;
+  btn.textContent = t("btnHidePrompt");
 }
 
 // --------------------------------------------------------------- overview --
@@ -539,11 +676,25 @@ async function openOverview() {
       row.gesture && row.gesture.length
         ? row.gesture.map((g) => `<span class="gtag">${g}</span>`).join(" ")
         : `<span class="gtag empty-tag">${t("emptyTag")}</span>`;
+    const grade = row.grade
+      ? `<span class="gradebadge g-${row.grade}" title="${
+          row.motion != null ? "motion " + Number(row.motion).toFixed(2) : ""
+        }${row.source ? " · " + row.source : ""}">${row.grade}</span>` +
+        (row.review_flag ? `<span class="flag">⚑</span>` : "")
+      : "";
     meta.innerHTML =
       `<span class="ov-no">#${row.no}</span>` +
       `<span class="ov-ts">${row.timestamp}</span>` +
+      grade +
       `<span class="ov-tags">${tags}</span>` +
       `<span class="ov-conf">conf ${Number(row.confidence).toFixed(2)}</span>`;
+
+    if (row.speech !== undefined && row.speech !== null && row.speech !== "") {
+      const sp = document.createElement("div");
+      sp.className = "ov-speech";
+      sp.innerHTML = `<span class="ov-speech-label">💬 ${t("speechLabel")}</span> ${escapeHtml(row.speech)}`;
+      meta.appendChild(sp);
+    }
 
     const img = document.createElement("img");
     img.className = "ov-img";
@@ -571,7 +722,9 @@ async function exportCsv() {
   try {
     const res = await api(`/api/export?confidence=${conf}`);
     toast(t("toastSaved", res.path, res.rows));
-    window.open(`/api/export?confidence=${conf}&download=true`, "_blank");
+    // Download the exact file just written (same {video}_{datetime}.csv name).
+    const q = `confidence=${conf}&download=true&name=${encodeURIComponent(res.name)}`;
+    window.open(`/api/export?${q}`, "_blank");
   } catch (e) {
     toast(t("errExportFail", e.message));
   }
@@ -596,6 +749,10 @@ function wire() {
   $("apiKey").addEventListener("blur", autosaveApiKey);
   $("clearKeyBtn").onclick = clearApiKey;
   $("saveSettingsBtn").onclick = saveSettings;
+  $("motionFilter").onchange = reflectMotionFilter;
+  $("sttEnabled").onchange = reflectStt;
+  $("interval").oninput = reflectWindowDur;
+  $("segmentFrames").oninput = reflectWindowDur;
   $("editSchemaBtn").onclick = openSchemaModal;
   $("schemaCancel").onclick = () => ($("schemaModal").hidden = true);
   $("schemaSave").onclick = saveSchema;
@@ -605,6 +762,7 @@ function wire() {
   $("editCancel").onclick = () => ($("editModal").hidden = true);
   $("editSave").onclick = saveEdit;
   $("stripClose").onclick = () => ($("stripModal").hidden = true);
+  $("stripPromptBtn").onclick = toggleStripPrompt;
   $("overviewBtn").onclick = openOverview;
   $("overviewClose").onclick = () => ($("overviewModal").hidden = true);
   $("langToggle").onclick = () => setLang(LANG === "ko" ? "en" : "ko");

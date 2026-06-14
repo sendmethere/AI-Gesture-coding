@@ -1,7 +1,9 @@
 """FastAPI application: serves the frontend and the analysis API."""
 import mimetypes
 import os
+import re
 import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -16,7 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import csv_export, schema_store, settings_store
-from .paths import FRONTEND_DIR, VIDEOS_DIR, STRIPS_DIR, ensure_dirs
+from .paths import (
+    FRONTEND_DIR, VIDEOS_DIR, STRIPS_DIR, RESULTS_DIR, PROMPTS_DIR, ensure_dirs,
+)
 from .pipeline import JOB
 
 ensure_dirs()
@@ -66,6 +70,12 @@ class SettingsBody(BaseModel):
     min_confidence: Optional[float] = None
     include_confidence: Optional[bool] = None
     save_strips: Optional[bool] = None
+    motion_filter: Optional[bool] = None
+    still_threshold: Optional[float] = None
+    start_threshold: Optional[float] = None
+    stt_enabled: Optional[bool] = None
+    stt_model: Optional[str] = None
+    stt_language: Optional[str] = None
 
 
 @app.post("/api/settings")
@@ -196,6 +206,18 @@ def get_strip(no: int):
     return FileResponse(f, media_type="image/png")
 
 
+@app.get("/api/prompt/{no}")
+def get_prompt(no: int):
+    """Serve the exact text message that was sent to the AI for this window."""
+    p = STATE["video_path"]
+    if not p:
+        raise HTTPException(404, "no video loaded")
+    f = PROMPTS_DIR / Path(p).stem / f"seg_{no:04d}.txt"
+    if not f.exists():
+        raise HTTPException(404, "prompt not found for this window")
+    return FileResponse(f, media_type="text/plain; charset=utf-8")
+
+
 class UpdateResultBody(BaseModel):
     index: int
     gestures: list
@@ -212,18 +234,37 @@ def update_result(body: UpdateResultBody):
 # --------------------------------------------------------------------------- #
 # CSV export
 # --------------------------------------------------------------------------- #
+def _export_filename(ts: Optional[str] = None) -> str:
+    """Build `{videotitle}_{YYYYMMDD_HHMMSS}.csv` for the loaded video."""
+    p = STATE["video_path"]
+    stem = Path(p).stem if p else "gesture"
+    stem = re.sub(r"[^\w.\-]+", "_", stem).strip("_") or "gesture"  # filesystem-safe
+    ts = ts or datetime.now().strftime("%Y%m%d_%H%M%S")
+    return f"{stem}_{ts}.csv"
+
+
 @app.get("/api/export")
-def export_csv(confidence: bool = False, download: bool = False):
+def export_csv(confidence: bool = False, download: bool = False, name: str = ""):
     snap = JOB.snapshot(0)
     results = snap["results"]
     if not results:
         raise HTTPException(400, "no results to export")
-    path = csv_export.save_csv(results, include_confidence=confidence)
+
+    # On download, reuse the file already written by the preceding save call
+    # (so we don't create a second file with a different timestamp).
+    if download and name:
+        safe = Path(name).name  # strip any path components
+        existing = RESULTS_DIR / safe
+        if existing.exists():
+            return FileResponse(existing, media_type="text/csv", filename=safe)
+        path = csv_export.save_csv(results, include_confidence=confidence, name=safe)
+        return FileResponse(path, media_type="text/csv", filename=safe)
+
+    fname = _export_filename()
+    path = csv_export.save_csv(results, include_confidence=confidence, name=fname)
     if download:
-        return FileResponse(
-            path, media_type="text/csv", filename="gesture_result.csv"
-        )
-    return {"path": path, "rows": len(results)}
+        return FileResponse(path, media_type="text/csv", filename=fname)
+    return {"path": path, "rows": len(results), "name": fname}
 
 
 # --------------------------------------------------------------------------- #

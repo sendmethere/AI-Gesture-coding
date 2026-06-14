@@ -1,0 +1,9 @@
+# Optional: speech-to-text transcription (plan.v2 §1.2).
+# Enables per-window speech (sentence/word) annotation via faster-whisper.
+# Audio is decoded from the video directly (PyAV) — no external ffmpeg needed.
+# The app works without this; STT is simply disabled if it is not installed.
+#
+#   pip install -r requirements-stt.txt
+#
+# First use downloads the chosen Whisper model weights automatically.
+faster-whisper>=1.0

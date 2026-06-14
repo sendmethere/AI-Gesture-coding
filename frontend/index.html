@@ -56,6 +56,17 @@
 
       <section class="card">
         <h2 data-i18n="secOptions">4. 분석 옵션</h2>
+        <div class="row">
+          <div class="field">
+            <label><span data-i18n="lblInterval">스냅샷 간격(초)</span></label>
+            <input id="interval" type="number" step="0.1" min="0.1" value="0.3" />
+          </div>
+          <div class="field">
+            <label><span data-i18n="lblSegFrames">윈도우 크기(프레임)</span></label>
+            <input id="segmentFrames" type="number" step="1" min="2" value="10" />
+          </div>
+        </div>
+        <div class="muted small" id="windowDurHint"></div>
         <label><span data-i18n="lblStartAt">분석 시작 지점</span> <span class="muted" data-i18n="hintStartAt">· 분 : 초</span></label>
         <div class="row">
           <input id="startMin" type="number" step="1" min="0" value="0" data-i18n-ph="phMin" placeholder="분" />
@@ -68,6 +79,40 @@
         <label class="check">
           <input id="includeConf" type="checkbox" checked /> <span data-i18n="lblIncludeConf">CSV에 confidence 포함</span>
         </label>
+        <label class="check">
+          <input id="motionFilter" type="checkbox" checked /> <span data-i18n="lblMotionFilter">모션 사전필터 (토큰 절감)</span>
+        </label>
+        <div id="motionThresholds" class="row">
+          <div class="field">
+            <label><span data-i18n="lblStillThr">정지 임계값</span></label>
+            <input id="stillThreshold" type="number" step="0.05" min="0" max="3" value="0.25" />
+          </div>
+          <div class="field">
+            <label><span data-i18n="lblStartThr">시작 임계값</span></label>
+            <input id="startThreshold" type="number" step="0.05" min="0" max="3" value="0.25" />
+          </div>
+        </div>
+        <div class="muted small" data-i18n="hintMotion">· 시작 임계값에 도달하는 프레임이 없으면 제스처 없음(GT-None)·AI 생략 · 골격은 YOLO-pose 설치 시 활성</div>
+        <label class="check">
+          <input id="sttEnabled" type="checkbox" /> <span data-i18n="lblStt">발화 전사(STT) · 윈도우별 문장</span>
+        </label>
+        <div id="sttOpts" class="row">
+          <div class="field">
+            <label><span data-i18n="lblSttModel">STT 모델</span></label>
+            <select id="sttModel">
+              <option value="tiny">tiny (빠름·저정확)</option>
+              <option value="base" selected>base</option>
+              <option value="small">small</option>
+              <option value="medium">medium</option>
+              <option value="large-v3">large-v3 (느림·고정확)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label><span data-i18n="lblSttLang">언어</span></label>
+            <input id="sttLanguage" type="text" placeholder="auto / ko / en" />
+          </div>
+        </div>
+        <div class="muted small" data-i18n="hintStt">· faster-whisper 설치 필요 · 첫 실행 시 모델 다운로드 · 결과는 윈도우별 발화로 부착</div>
       </section>
 
       <section class="card actions">
@@ -156,7 +201,9 @@
       <p class="muted" data-i18n="stripDesc">왼쪽→오른쪽, 0.5초 간격 6프레임(=3초)을 이어붙인 strip 입니다.</p>
       <div class="strip-view"><img id="stripImg" alt="strip" /></div>
       <div id="stripError" class="error"></div>
+      <pre id="stripPrompt" class="prompt-view" hidden></pre>
       <div class="modal-actions">
+        <button id="stripPromptBtn" class="btn ghost" data-i18n="btnShowPrompt">📝 전송 메시지 보기</button>
         <button id="stripClose" class="btn primary" data-i18n="btnClose">닫기</button>
       </div>
     </div>

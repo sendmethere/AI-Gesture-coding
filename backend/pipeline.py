@@ -14,14 +14,26 @@ from typing import List, Optional
 
 import cv2
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from . import llm
 from .detector import get_detector
-from .paths import STRIPS_DIR, LOGS_DIR
+from .motion import get_analyzer
+from .stt import get_transcriber, speech_in_window
+from .paths import STRIPS_DIR, LOGS_DIR, PROMPTS_DIR
 from .schema_store import load_schema
 
 STRIP_HEIGHT = 240  # px; frames are resized to this height before concat
+BAR_H = 18          # px; motion colorbar height drawn at the bottom of each frame
+
+# Motion state -> colorbar RGB (plan.v2 §4.2). The gesture start frame is forced
+# to green; sustained motion after it shows blue.
+STATE_COLOR = {
+    "still": (120, 120, 120),  # gray  — no motion
+    "prep": (235, 200, 40),    # yellow — preparation
+    "move": (40, 130, 220),    # blue  — gesture in progress
+    "start": (40, 200, 90),    # green — gesture start ★
+}
 
 
 def format_ts(seconds: float) -> str:
@@ -41,6 +53,7 @@ class AnalysisJob:
         self.done = 0
         self.current_seconds = 0.0  # start time of the segment being processed
         self.status = "idle"  # idle | running | done | stopped | error
+        self.phase = "idle"   # idle | transcribing | analyzing
         self.error: Optional[str] = None
         self.video_path: Optional[str] = None
         self.detector_status = ""
@@ -52,6 +65,7 @@ class AnalysisJob:
         with self.lock:
             return {
                 "status": self.status,
+                "phase": self.phase,
                 "total": self.total,
                 "done": self.done,
                 "current_seconds": self.current_seconds,
@@ -97,6 +111,7 @@ class AnalysisJob:
             self.done = 0
             self.current_seconds = 0.0
             self.status = "running"
+            self.phase = "analyzing"
             self.error = None
             self.video_path = video_path
         self._stop.clear()
@@ -131,11 +146,25 @@ class AnalysisJob:
         start_offset = float(settings.get("start_offset", 0) or 0)  # seconds
         max_duration = float(settings.get("max_duration", 0) or 0)  # 0 = no limit
         min_conf = float(settings.get("min_confidence", 0) or 0)    # 0 = off
+        motion_filter = bool(settings.get("motion_filter", True))
+        still_thr = float(settings.get("still_threshold", 0.05) or 0.05)
+        start_thr = float(settings.get("start_threshold", 0.3) or 0.3)
+        stt_enabled = bool(settings.get("stt_enabled", False))
+        stt_model = settings.get("stt_model", "base") or "base"
+        stt_language = settings.get("stt_language", "") or ""
         schema = load_schema()
 
         detector = get_detector()
+        analyzer = get_analyzer() if motion_filter else None
         self.detector_status = detector.status()
+        if analyzer is not None:
+            self.detector_status += f" · motion:{analyzer.status()}"
         self.log(f"[start] {Path(video_path).name} detector={self.detector_status}")
+        if motion_filter:
+            self.log(
+                f"[motion] filter on (start threshold {start_thr:g}) — segments "
+                "with no frame reaching it are auto-coded GT-None (token save)"
+            )
 
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
@@ -166,9 +195,46 @@ class AnalysisJob:
         with self.lock:
             self.total = total_segments
 
+        # ----- speech transcription for the analyzed range (plan.v2 §1.2) --- #
+        transcript: List[dict] = []
+        if stt_enabled and total_segments > 0:
+            stt_end = start_offset + total_segments * seg_len
+            transcriber = get_transcriber(stt_model, stt_language)
+            if transcriber.available:
+                self.detector_status += f" · stt:{transcriber.status()}"
+                self.phase = "transcribing"
+                self.log(
+                    f"[stt] transcribing {format_ts(start_offset)}~"
+                    f"{format_ts(stt_end)} with {transcriber.status()} …"
+                )
+
+                def _stt_progress(sec: float) -> None:
+                    self.current_seconds = sec  # drives the live "up to" readout
+                    self.log(f"  ↳ transcribed up to {format_ts(sec)}")
+
+                try:
+                    transcript = transcriber.transcribe_range(
+                        video_path, start_offset, stt_end, progress=_stt_progress
+                    )
+                    self.log(f"[stt] done — {len(transcript)} utterances")
+                except Exception as e:
+                    self.log(f"[stt-error] {e}")
+                    transcript = []
+                finally:
+                    self.phase = "analyzing"
+            else:
+                self.log(
+                    "[stt] enabled but faster-whisper is unavailable "
+                    "(pip install -r requirements-stt.txt) — skipping"
+                )
+
         strip_dir = STRIPS_DIR / Path(video_path).stem
         if save_strips:
             strip_dir.mkdir(parents=True, exist_ok=True)
+        # Per-window prompt text is always saved (tiny) so the exact message sent
+        # to the AI can be reviewed later.
+        prompt_dir = PROMPTS_DIR / Path(video_path).stem
+        prompt_dir.mkdir(parents=True, exist_ok=True)
 
         seg_index = 0
         while seg_index < total_segments:
@@ -178,15 +244,16 @@ class AnalysisJob:
 
             seg_start = start_offset + seg_index * seg_len
             self.current_seconds = seg_start
-            crops = []
+            frames = []  # full frames (pose runs on these for a stable reference)
+            crops = []   # teacher crops (used to build the strip image)
             for f in range(seg_frames):
                 t = seg_start + f * interval
                 cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000.0)
                 ok, frame = cap.read()
                 if not ok or frame is None:
                     break
-                crop = detector.crop_teacher(frame)
-                crops.append(crop)
+                frames.append(frame)
+                crops.append(detector.crop_teacher(frame))
 
             if not crops:
                 # reached end of stream
@@ -194,7 +261,27 @@ class AnalysisJob:
                     self.total = seg_index  # correct the total
                 break
 
-            strip = self._make_strip(crops)
+            # ----- motion pre-analysis + grading (plan.v2 §3, §5.1) -------- #
+            motion = (
+                analyzer.analyze(frames, still_thr, start_thr)
+                if analyzer is not None
+                else None
+            )
+            grade, source = self._grade(motion, start_thr)
+
+            # Speech spoken during this window (plan.v2 §1.2).
+            speech = speech_in_window(transcript, seg_start, seg_start + seg_len)
+
+            timestamps = [
+                format_ts(seg_start + f * interval) for f in range(len(crops))
+            ]
+            strip = self._make_strip(
+                crops,
+                states=(motion or {}).get("states"),
+                per_frame=(motion or {}).get("per_frame"),
+                start_frame=(motion or {}).get("start_frame", 0),
+                timestamps=timestamps,
+            )
             strip_png = self._png_bytes(strip)
             if save_strips:
                 try:
@@ -202,24 +289,50 @@ class AnalysisJob:
                 except Exception:
                     pass
 
-            try:
-                res = llm.analyze_strip(
-                    provider, api_key, model, strip_png, schema, seg_index
-                )
-            except Exception as e:
-                res = {"gestures": [], "confidence": 0.0, "error": str(e)}
-                self.log(f"[llm-error] seg {seg_index + 1}: {e}")
-
-            gestures = res.get("gestures", [])
-            confidence = res.get("confidence", 0.0)
-            # Force low-confidence segments to None.
-            if min_conf > 0 and confidence < min_conf and gestures:
+            motion_desc = (motion or {}).get("description", "")
+            if grade == "C":
+                # Near-still + skeleton OK → GT-None automatically, no AI tokens.
+                gestures, confidence = [], 1.0
                 self.log(
-                    f"  ↳ conf {confidence} < {min_conf} → None "
-                    f"(dropped {gestures})"
+                    f"  ↳ grade C: motion {motion['max_change']:g} < {start_thr:g}"
+                    " → GT-None (AI skipped)"
                 )
-                gestures = []
+                prompt_text = (
+                    "[grade C — AI call skipped by the motion pre-filter]\n"
+                    f"No frame reached the start threshold ({start_thr:g}); "
+                    "auto-coded GT-N (no gesture). No message was sent to the AI.\n\n"
+                    f"motion: {motion_desc}"
+                )
+            else:
+                prompt_text = llm.build_prompt(schema, speech, motion_desc)
+                try:
+                    res = llm.analyze_strip(
+                        provider, api_key, model, strip_png, schema, seg_index,
+                        speech=speech, motion_desc=motion_desc,
+                    )
+                except Exception as e:
+                    res = {"gestures": [], "confidence": 0.0, "error": str(e)}
+                    self.log(f"[llm-error] seg {seg_index + 1}: {e}")
 
+                gestures = res.get("gestures", [])
+                confidence = res.get("confidence", 0.0)
+                # Force low-confidence segments to None.
+                if min_conf > 0 and confidence < min_conf and gestures:
+                    self.log(
+                        f"  ↳ conf {confidence} < {min_conf} → None "
+                        f"(dropped {gestures})"
+                    )
+                    gestures = []
+
+            # Save the exact message (text) sent to the AI for later review.
+            try:
+                (prompt_dir / f"seg_{seg_index + 1:04d}.txt").write_text(
+                    prompt_text, encoding="utf-8"
+                )
+            except Exception:
+                pass
+
+            review_flag = self._review_flag(grade, confidence)
             row = {
                 "no": seg_index + 1,
                 "seconds": seg_start,
@@ -227,20 +340,71 @@ class AnalysisJob:
                 "gesture": gestures,
                 "confidence": confidence,
                 "edited": False,
+                "grade": grade,
+                "motion": (motion or {}).get("max_change"),
+                "source": source,
+                "review_flag": review_flag,
+                "speech": speech,
             }
             with self.lock:
                 self.results.append(row)
                 self.done = seg_index + 1
+            grade_tag = f"[{grade}] " if grade else ""
+            flag_tag = " ⚑" if review_flag else ""
             self.log(
                 f"{format_ts(seg_start)}~{format_ts(seg_start + seg_len)}  "
-                f"{row['gesture']}  ({row['confidence']})"
+                f"{grade_tag}{row['gesture']}  ({row['confidence']}){flag_tag}"
             )
             seg_index += 1
 
         cap.release()
 
+    # ----- grading (plan.v2 §5.1, §7) ----------------------------------- #
+    @staticmethod
+    def _grade(motion: Optional[dict], start_thr: float) -> tuple:
+        """Return (grade, detection_source).
+
+        A = skeleton OK + a frame reaches the gesture-start threshold → AI codes
+        B = skeleton detection failed                → AI judges (review needed)
+        C = skeleton OK but NO frame reaches start_thr (no codeable gesture)
+            → GT-None auto, AI skipped (plan §3.2 / §5.1, the token-saving path)
+        "" = motion filter disabled                  → AI codes (legacy behavior)
+
+        Gating on the START threshold (not the still threshold) is deliberate:
+        with real pose tracking there is always a small jitter floor, so a
+        single low-motion frame is never "perfectly still". A segment is only
+        worth AI tokens if motion actually rises to gesture level somewhere in
+        the window.
+        """
+        if motion is None:
+            return "", None
+        source = motion.get("source")
+        if not motion.get("ok"):
+            return "B", "skeleton_fail"
+        if motion.get("max_change", 0.0) < start_thr:
+            return "C", source
+        return "A", source
+
+    @staticmethod
+    def _review_flag(grade: str, confidence: float) -> bool:
+        """plan.v2 §7.2 — flag segments a researcher should double-check."""
+        if grade == "B":
+            return True          # skeleton detection failed
+        if grade == "C":
+            return False         # auto GT-None, high certainty
+        if confidence and confidence < 0.75:
+            return True
+        return False
+
     # ----- imaging helpers ---------------------------------------------- #
-    def _make_strip(self, crops: List[np.ndarray]) -> Image.Image:
+    def _make_strip(
+        self,
+        crops: List[np.ndarray],
+        states: Optional[List[str]] = None,
+        per_frame: Optional[List[float]] = None,
+        start_frame: int = 0,
+        timestamps: Optional[List[str]] = None,
+    ) -> Image.Image:
         imgs = []
         for c in crops:
             rgb = cv2.cvtColor(c, cv2.COLOR_BGR2RGB)
@@ -248,10 +412,42 @@ class AnalysisJob:
             w = max(1, int(im.width * (STRIP_HEIGHT / im.height)))
             imgs.append(im.resize((w, STRIP_HEIGHT)))
         total_w = sum(im.width for im in imgs)
-        strip = Image.new("RGB", (total_w, STRIP_HEIGHT), (0, 0, 0))
+
+        annotate = bool(states)  # only when motion data is available
+        bar_h = BAR_H if annotate else 0
+        strip = Image.new("RGB", (total_w, STRIP_HEIGHT + bar_h), (0, 0, 0))
         x = 0
         for im in imgs:
             strip.paste(im, (x, 0))
+            x += im.width
+        if not annotate:
+            return strip
+
+        # Draw a motion colorbar + timestamp/change label under each frame.
+        draw = ImageDraw.Draw(strip)
+        x = 0
+        for i, im in enumerate(imgs):
+            st = states[i] if i < len(states) else "still"
+            if start_frame and i + 1 == start_frame:
+                st = "start"
+            color = STATE_COLOR.get(st, STATE_COLOR["still"])
+            draw.rectangle(
+                [x, STRIP_HEIGHT, x + im.width - 1, STRIP_HEIGHT + bar_h - 1],
+                fill=color,
+            )
+            label = []
+            if timestamps and i < len(timestamps):
+                label.append(timestamps[i])
+            if per_frame and i < len(per_frame):
+                label.append(f"{per_frame[i]:.2f}")
+            if label:
+                txt = " ".join(label)
+                tx = x + 3
+                ty = STRIP_HEIGHT + 4
+                # outline for legibility over any bar color
+                for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                    draw.text((tx + dx, ty + dy), txt, fill=(0, 0, 0))
+                draw.text((tx, ty), txt, fill=(255, 255, 255))
             x += im.width
         return strip
 
