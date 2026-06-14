@@ -191,6 +191,7 @@ tr.speech-row .speechmark { margin-right: 4px; opacity: .9; }
 body.mode-human .ai-only { display: none !important; }
 
 /* human coding tab */
+#humanPanel { padding: 14px; overflow-y: auto; min-height: 0; }
 .human-coding { display: flex; flex-direction: column; gap: 12px; }
 .hc-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .hc-field input { width: 100%; }

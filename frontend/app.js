@@ -871,7 +871,6 @@ function renderHumanCodes() {
   SCHEMA.gestures.forEach((g) => {
     const b = document.createElement("button");
     b.className = "hc-code" + (cur.has(g.name) ? " on" : "");
-    b.title = g.description || "";
     b.onclick = () => hcToggle(g.name);
     const name = document.createElement("span");
     name.className = "hc-code-name";
