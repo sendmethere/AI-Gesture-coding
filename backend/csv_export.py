@@ -44,8 +44,12 @@ def results_to_csv(results: List[dict], include_confidence: bool = False) -> str
     return buf.getvalue()
 
 
-def save_csv(results: List[dict], include_confidence: bool = False) -> str:
+def save_csv(
+    results: List[dict], include_confidence: bool = False, name: str = ""
+) -> str:
+    """Write the CSV. `name` (a bare filename) overrides the default path."""
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     text = results_to_csv(results, include_confidence)
-    RESULT_CSV_PATH.write_text(text, encoding="utf-8")
-    return str(RESULT_CSV_PATH)
+    target = (RESULTS_DIR / name) if name else RESULT_CSV_PATH
+    target.write_text(text, encoding="utf-8")
+    return str(target)

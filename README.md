@@ -55,12 +55,18 @@ normalized hand displacement. / 숫자는 정규화 손 이동량입니다.
 | Code | Type | AI judgment basis / AI 판단 근거 |
 |---|---|---|
 | `GT-D` | Deictic / 지시적 | Fingertip/hand extends toward a target and holds / 손끝이 특정 방향·대상으로 뻗고 정지 |
-| `GT-I` | Iconic / 상징적 | Curved/looping path imitating a concrete object's form / 곡선·원형 경로로 구체적 대상 형태 모방 |
-| `GT-M` | Metaphoric / 은유적 | Maps a **nameable abstract idea** onto space (strictest category) / **이름 붙일 수 있는 추상 개념**을 공간에 매핑 (가장 엄격한 범주) |
+| `GT-I` | Iconic / 상징적 | Depicts a concrete object's shape, **size**, or motion (e.g. hands/body widening for "big", hunching for "small") / 구체적 대상의 형태·**크기**·움직임 모방(예: 큼=몸·손 벌리기, 작음=움츠리기) |
+| `GT-M` | Metaphoric / 은유적 | Gives an abstract idea spatial form (palm-presenting, left/right contrast, up=more, weighing options) / 추상 개념에 공간적 형태 부여(손바닥 제시, 좌우 대비, 위=증가, 저울질 등) |
 | `GT-B` | Beat / 박자적 | Short, repeated strokes in rhythm with speech / 발화 리듬에 맞춘 짧고 반복적 동작 |
 | `GT-E` | Emblematic / 관습적 | Culturally fixed sign (raised hand, thumbs-up, OK) / 문화적으로 표준화된 사인(손들기 등) |
 | `GT-N` | No gesture / 제스처 없음 | No meaningful hand/arm movement → empty list `[]` / 유의미한 손·팔 움직임 미감지 → 빈 리스트 |
 | `GT-X` | Unclassifiable / 판별 불가 | Clear movement but type undetermined / 움직임 있으나 유형 미분류 |
+
+> Size cue / 크기 표현: depicting a **real object's** size (enlarging or
+> shrinking the hands/body) is **GT-I (Iconic)**; an **abstract** magnitude with
+> no real referent (a "big" problem, great importance) is **GT-M (Metaphoric)**.
+> <br>**실물 대상**의 크기를 손·몸으로 키우거나 줄여 표현하면 **GT-I(상징적)**,
+> 실물 없이 **추상적 크기**(예: "큰" 문제, 중요성)를 표현하면 **GT-M(은유적)**.
 
 The codes are a user-editable schema (`config/gesture_schema.json`); see
 [Editing the Gesture Schema](#editing-the-gesture-schema--제스처-분류체계-편집).
@@ -121,13 +127,13 @@ python run.py --no-window              # server only → http://127.0.0.1:8765 /
 4. **4. Analysis Options** — set the range and filters (see below). / 분석 범위·필터 설정(아래 참고)
 5. **Start** → the right **Results** tab fills in real time; the player playhead follows the window being coded. / **분석 시작** → 우측 **결과** 탭 실시간 채움, 플레이헤드가 코딩 중 윈도우를 따라감
 6. In Results: **click a timestamp to jump the video there**, **click a Gesture cell to edit codes**, **🖼** to preview that window's strip, and **Overview** to scroll all strips + codes (+ speech). / 결과창에서 **시간 클릭=해당 시점 이동**, **Gesture 셀 클릭=코드 수정**, **🖼**=해당 strip 미리보기, **Overview**=전체 strip·코드(·발화) 스크롤 검토
-7. **Export CSV** → `results/gesture_result.csv`. / **CSV 내보내기**
+7. **Export CSV** → `results/{video-title}_{YYYYMMDD_HHMMSS}.csv`. / **CSV 내보내기** → `results/{영상제목}_{날짜시간}.csv`
 
 ### Analysis Options / 분석 옵션
 
 - **Start point (min:sec)** / 분석 시작 지점, **Length limit (sec, 0 = to end)** / 분석 길이 제한
 - **Min confidence** — below it the AI code is forced to None (0 = off) / 최소 신뢰도(이하 None, 0=끔)
-- **Motion pre-filter** on/off + **Still / Start thresholds** (defaults **0.3 / 0.5**) / 모션 사전필터 + 정지/시작 임계값(기본 0.3/0.5)
+- **Motion pre-filter** on/off + **Still / Start thresholds** (defaults **0.25 / 0.25**) / 모션 사전필터 + 정지/시작 임계값(기본 0.25/0.25)
 - **STT** on/off + **model** (tiny…large-v3) + **language** (auto/ko/en). STT transcribes **only the analyzed range** and shows a loading indicator on the first run. / STT 켜기 + 모델 + 언어. **분석 구간만** 전사하며 첫 실행 시 로딩 표시
 - **Include confidence in CSV** / CSV에 confidence 포함
 
@@ -145,8 +151,9 @@ python run.py --no-window              # server only → http://127.0.0.1:8765 /
 
 ## Output / CSV / 출력
 
-`results/gesture_result.csv` columns (extra columns are added automatically when
-the data is present): / 데이터가 있을 때 추가 열이 자동 포함됩니다:
+Saved as `results/{video-title}_{YYYYMMDD_HHMMSS}.csv`. Columns (extra columns
+are added automatically when the data is present): / `results/{영상제목}_{날짜시간}.csv`로
+저장됩니다. 열 구성(데이터가 있을 때 추가 열 자동 포함):
 
 | Column | Meaning / 의미 |
 |---|---|

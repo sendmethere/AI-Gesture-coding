@@ -23,6 +23,8 @@ const STRINGS = {
     btnSaveSettings: "설정 저장",
     secSchema: "3. 제스처 분류체계", btnEditSchema: "JSON 편집",
     secOptions: "4. 분석 옵션",
+    lblInterval: "스냅샷 간격(초)", lblSegFrames: "윈도우 크기(프레임)",
+    windowDur: "· 윈도우 길이 {0}초 ({1}프레임 × {2}초)",
     lblStartAt: "분석 시작 지점", hintStartAt: "· 분 : 초", phMin: "분", phSec: "초",
     lblMaxDur: "분석 길이 제한(초)", hintMaxDur: "· 시작점부터 · 0 = 끝까지",
     lblMinConf: "최소 신뢰도", hintMinConf: "· 이하면 None 처리 · 0 = 끔",
@@ -76,6 +78,8 @@ const STRINGS = {
     btnSaveSettings: "Save Settings",
     secSchema: "3. Gesture Schema", btnEditSchema: "Edit JSON",
     secOptions: "4. Analysis Options",
+    lblInterval: "Snapshot interval (s)", lblSegFrames: "Window size (frames)",
+    windowDur: "· window {0}s ({1} frames × {2}s)",
     lblStartAt: "Start at", hintStartAt: "· min : sec", phMin: "min", phSec: "sec",
     lblMaxDur: "Length limit (sec)", hintMaxDur: "· from start · 0 = to end",
     lblMinConf: "Min confidence", hintMinConf: "· below → None · 0 = off",
@@ -141,6 +145,7 @@ function applyI18n() {
   // refresh dynamic bits that hold translated text
   reflectKeyStatus(lastHasKey);
   refreshProgressLabels();
+  if ($("interval")) reflectWindowDur();
 }
 
 function setLang(l) {
@@ -176,6 +181,8 @@ async function loadSettings() {
   const s = await api("/api/settings");
   $("provider").value = s.provider || "mock";
   $("model").value = s.model || "";
+  $("interval").value = s.interval ?? 0.3;
+  $("segmentFrames").value = s.segment_frames ?? 10;
   const off = Math.max(0, Math.floor(s.start_offset ?? 0));
   $("startMin").value = Math.floor(off / 60);
   $("startSec").value = off % 60;
@@ -183,18 +190,25 @@ async function loadSettings() {
   $("minConfidence").value = s.min_confidence ?? 0;
   $("includeConf").checked = s.include_confidence ?? true;
   $("motionFilter").checked = s.motion_filter ?? true;
-  $("stillThreshold").value = s.still_threshold ?? 0.3;
-  $("startThreshold").value = s.start_threshold ?? 0.5;
+  $("stillThreshold").value = s.still_threshold ?? 0.25;
+  $("startThreshold").value = s.start_threshold ?? 0.25;
   $("sttEnabled").checked = s.stt_enabled ?? false;
   $("sttModel").value = s.stt_model || "base";
   $("sttLanguage").value = s.stt_language || "";
   reflectMotionFilter();
   reflectStt();
+  reflectWindowDur();
   reflectKeyStatus(s.has_api_key);
 }
 
 function reflectMotionFilter() {
   $("motionThresholds").style.opacity = $("motionFilter").checked ? "1" : "0.4";
+}
+
+function reflectWindowDur() {
+  const iv = Math.max(0.1, parseFloat($("interval").value) || 0.3);
+  const fr = Math.max(2, parseInt($("segmentFrames").value) || 10);
+  $("windowDurHint").textContent = t("windowDur", (iv * fr).toFixed(1), fr, iv);
 }
 
 function reflectStt() {
@@ -205,6 +219,8 @@ async function saveSettings() {
   const body = {
     provider: $("provider").value,
     model: $("model").value,
+    interval: Math.max(0.1, parseFloat($("interval").value) || 0.3),
+    segment_frames: Math.max(2, parseInt($("segmentFrames").value) || 10),
     start_offset:
       Math.max(0, parseInt($("startMin").value) || 0) * 60 +
       Math.max(0, parseInt($("startSec").value) || 0),
@@ -212,8 +228,8 @@ async function saveSettings() {
     min_confidence: Math.min(1, Math.max(0, parseFloat($("minConfidence").value) || 0)),
     include_confidence: $("includeConf").checked,
     motion_filter: $("motionFilter").checked,
-    still_threshold: Math.min(3, Math.max(0, parseFloat($("stillThreshold").value) || 0.3)),
-    start_threshold: Math.min(3, Math.max(0, parseFloat($("startThreshold").value) || 0.5)),
+    still_threshold: Math.min(3, Math.max(0, parseFloat($("stillThreshold").value) || 0.25)),
+    start_threshold: Math.min(3, Math.max(0, parseFloat($("startThreshold").value) || 0.25)),
     stt_enabled: $("sttEnabled").checked,
     stt_model: $("sttModel").value,
     stt_language: $("sttLanguage").value.trim(),
@@ -675,7 +691,9 @@ async function exportCsv() {
   try {
     const res = await api(`/api/export?confidence=${conf}`);
     toast(t("toastSaved", res.path, res.rows));
-    window.open(`/api/export?confidence=${conf}&download=true`, "_blank");
+    // Download the exact file just written (same {video}_{datetime}.csv name).
+    const q = `confidence=${conf}&download=true&name=${encodeURIComponent(res.name)}`;
+    window.open(`/api/export?${q}`, "_blank");
   } catch (e) {
     toast(t("errExportFail", e.message));
   }
@@ -702,6 +720,8 @@ function wire() {
   $("saveSettingsBtn").onclick = saveSettings;
   $("motionFilter").onchange = reflectMotionFilter;
   $("sttEnabled").onchange = reflectStt;
+  $("interval").oninput = reflectWindowDur;
+  $("segmentFrames").oninput = reflectWindowDur;
   $("editSchemaBtn").onclick = openSchemaModal;
   $("schemaCancel").onclick = () => ($("schemaModal").hidden = true);
   $("schemaSave").onclick = saveSchema;

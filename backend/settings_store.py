@@ -19,8 +19,8 @@ DEFAULTS = {
     "include_confidence": True,
     "save_strips": True,
     "motion_filter": True,       # pre-filter low-motion segments to save AI tokens (plan.v2 §3)
-    "still_threshold": 0.3,      # below this normalized hand motion -> "still" (gray colorbar)
-    "start_threshold": 0.5,      # gesture-start level; no frame reaching it -> auto GT-None (grade C)
+    "still_threshold": 0.25,     # below this normalized hand motion -> "still" (gray colorbar)
+    "start_threshold": 0.25,     # gesture-start level; no frame reaching it -> auto GT-None (grade C)
     "stt_enabled": False,        # transcribe speech and attach it per window (plan.v2 §1.2)
     "stt_model": "base",         # faster-whisper model: tiny|base|small|medium|large-v3
     "stt_language": "",          # "" = auto-detect; e.g. "ko", "en"
