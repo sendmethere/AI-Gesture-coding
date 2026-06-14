@@ -194,8 +194,8 @@ async function loadSettings() {
   $("minConfidence").value = s.min_confidence ?? 0;
   $("includeConf").checked = s.include_confidence ?? true;
   $("motionFilter").checked = s.motion_filter ?? true;
-  $("stillThreshold").value = s.still_threshold ?? 0.25;
-  $("startThreshold").value = s.start_threshold ?? 0.25;
+  $("stillThreshold").value = s.still_threshold ?? 0.35;
+  $("startThreshold").value = s.start_threshold ?? 0.35;
   $("sttEnabled").checked = s.stt_enabled ?? false;
   $("sttModel").value = s.stt_model || "base";
   $("sttLanguage").value = s.stt_language || "";
@@ -232,8 +232,8 @@ async function saveSettings() {
     min_confidence: Math.min(1, Math.max(0, parseFloat($("minConfidence").value) || 0)),
     include_confidence: $("includeConf").checked,
     motion_filter: $("motionFilter").checked,
-    still_threshold: Math.min(3, Math.max(0, parseFloat($("stillThreshold").value) || 0.25)),
-    start_threshold: Math.min(3, Math.max(0, parseFloat($("startThreshold").value) || 0.25)),
+    still_threshold: Math.min(3, Math.max(0, parseFloat($("stillThreshold").value) || 0.35)),
+    start_threshold: Math.min(3, Math.max(0, parseFloat($("startThreshold").value) || 0.35)),
     stt_enabled: $("sttEnabled").checked,
     stt_model: $("sttModel").value,
     stt_language: $("sttLanguage").value.trim(),

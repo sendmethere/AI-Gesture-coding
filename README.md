@@ -133,7 +133,7 @@ python run.py --no-window              # server only → http://127.0.0.1:8765 /
 
 - **Start point (min:sec)** / 분석 시작 지점, **Length limit (sec, 0 = to end)** / 분석 길이 제한
 - **Min confidence** — below it the AI code is forced to None (0 = off) / 최소 신뢰도(이하 None, 0=끔)
-- **Motion pre-filter** on/off + **Still / Start thresholds** (defaults **0.25 / 0.25**) / 모션 사전필터 + 정지/시작 임계값(기본 0.25/0.25)
+- **Motion pre-filter** on/off + **Still / Start thresholds** (defaults **0.35 / 0.35**) / 모션 사전필터 + 정지/시작 임계값(기본 0.35/0.35)
 - **STT** on/off + **model** (tiny…large-v3) + **language** (auto/ko/en). STT transcribes **only the analyzed range** and shows a loading indicator on the first run. / STT 켜기 + 모델 + 언어. **분석 구간만** 전사하며 첫 실행 시 로딩 표시
 - **Include confidence in CSV** / CSV에 confidence 포함
 
