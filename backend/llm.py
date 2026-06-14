@@ -45,12 +45,22 @@ def _check(r, provider: str):
     return r
 
 
-def build_prompt(schema: dict, speech: str = "") -> str:
+def build_prompt(schema: dict, speech: str = "", motion_desc: str = "") -> str:
     lines = []
     for g in schema.get("gestures", []):
         lines.append(f'- {g["name"]}: {g.get("description", "")}')
     catalog = "\n".join(lines)
     names = [g["name"] for g in schema.get("gestures", [])]
+
+    motion_note = ""
+    if motion_desc:
+        motion_note = (
+            f"\nObjective motion measurement for this window: {motion_desc}\n"
+            "This comes from skeletal pose tracking and is reliable for WHERE and "
+            "WHEN the hands move and in WHICH direction — use it together with the "
+            "image (small frames can hide this). It does not tell you the gesture "
+            "TYPE; decide that from what the hands do.\n"
+        )
 
     speech_note = ""
     if speech:
@@ -114,6 +124,7 @@ def build_prompt(schema: dict, speech: str = "") -> str:
         "gray=still, yellow=preparing, green=gesture start, blue=in motion; the "
         "number is the normalized hand displacement. Use it to locate where a "
         "gesture actually happens, but base the CODE on what the hands do.\n"
+        + motion_note
         + speech_note
         + "\nClassify the teacher gesture(s) visible across this segment using "
         "ONLY the following categories:\n"
@@ -188,7 +199,7 @@ def _mock(strip_png: bytes, schema: dict, seg_index: int) -> dict:
     return {"gestures": pick, "confidence": conf}
 
 
-def _openai(strip_png, schema, api_key, model, speech="") -> dict:
+def _openai(strip_png, schema, api_key, model, speech="", motion_desc="") -> dict:
     b64 = base64.b64encode(strip_png).decode()
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -201,7 +212,7 @@ def _openai(strip_png, schema, api_key, model, speech="") -> dict:
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": build_prompt(schema, speech)},
+                    {"type": "text", "text": build_prompt(schema, speech, motion_desc)},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/png;base64,{b64}"},
@@ -219,7 +230,7 @@ def _openai(strip_png, schema, api_key, model, speech="") -> dict:
     return _parse_json(text)
 
 
-def _anthropic(strip_png, schema, api_key, model, speech="") -> dict:
+def _anthropic(strip_png, schema, api_key, model, speech="", motion_desc="") -> dict:
     b64 = base64.b64encode(strip_png).decode()
     payload = {
         "model": model,
@@ -236,7 +247,7 @@ def _anthropic(strip_png, schema, api_key, model, speech="") -> dict:
                             "data": b64,
                         },
                     },
-                    {"type": "text", "text": build_prompt(schema, speech)},
+                    {"type": "text", "text": build_prompt(schema, speech, motion_desc)},
                 ],
             }
         ],
@@ -257,7 +268,7 @@ def _anthropic(strip_png, schema, api_key, model, speech="") -> dict:
     return _parse_json(text)
 
 
-def _gemini(strip_png, schema, api_key, model, speech="") -> dict:
+def _gemini(strip_png, schema, api_key, model, speech="", motion_desc="") -> dict:
     b64 = base64.b64encode(strip_png).decode()
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -267,7 +278,7 @@ def _gemini(strip_png, schema, api_key, model, speech="") -> dict:
         "contents": [
             {
                 "parts": [
-                    {"text": build_prompt(schema, speech)},
+                    {"text": build_prompt(schema, speech, motion_desc)},
                     {"inline_data": {"mime_type": "image/png", "data": b64}},
                 ]
             }
@@ -289,6 +300,7 @@ def analyze_strip(
     schema: dict,
     seg_index: int = 0,
     speech: str = "",
+    motion_desc: str = "",
 ) -> dict:
     provider = (provider or "mock").lower()
     model = model or DEFAULT_MODELS.get(provider, "")
@@ -297,11 +309,11 @@ def analyze_strip(
     if provider == "mock":
         result = _mock(strip_png, schema, seg_index)
     elif provider == "openai":
-        result = _openai(strip_png, schema, api_key, model, speech)
+        result = _openai(strip_png, schema, api_key, model, speech, motion_desc)
     elif provider == "anthropic":
-        result = _anthropic(strip_png, schema, api_key, model, speech)
+        result = _anthropic(strip_png, schema, api_key, model, speech, motion_desc)
     elif provider == "gemini":
-        result = _gemini(strip_png, schema, api_key, model, speech)
+        result = _gemini(strip_png, schema, api_key, model, speech, motion_desc)
     else:
         raise ValueError(f"unknown provider: {provider}")
 

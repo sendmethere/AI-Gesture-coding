@@ -182,6 +182,13 @@ tr.speech-row .speechmark { margin-right: 4px; opacity: .9; }
 
 .log { white-space: pre-wrap; word-break: break-word; font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); margin: 0; }
 
+.prompt-view {
+  white-space: pre-wrap; word-break: break-word;
+  font: 12px/1.5 ui-monospace, Menlo, monospace; color: var(--text);
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  padding: 10px 12px; margin: 10px 0 0; max-height: 320px; overflow: auto;
+}
+
 /* modal */
 .modal { position: fixed; inset: 0; background: rgba(0,0,0,.55);
   display: flex; align-items: center; justify-content: center; z-index: 50; }

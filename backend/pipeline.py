@@ -20,7 +20,7 @@ from . import llm
 from .detector import get_detector
 from .motion import get_analyzer
 from .stt import get_transcriber, speech_in_window
-from .paths import STRIPS_DIR, LOGS_DIR
+from .paths import STRIPS_DIR, LOGS_DIR, PROMPTS_DIR
 from .schema_store import load_schema
 
 STRIP_HEIGHT = 240  # px; frames are resized to this height before concat
@@ -231,6 +231,10 @@ class AnalysisJob:
         strip_dir = STRIPS_DIR / Path(video_path).stem
         if save_strips:
             strip_dir.mkdir(parents=True, exist_ok=True)
+        # Per-window prompt text is always saved (tiny) so the exact message sent
+        # to the AI can be reviewed later.
+        prompt_dir = PROMPTS_DIR / Path(video_path).stem
+        prompt_dir.mkdir(parents=True, exist_ok=True)
 
         seg_index = 0
         while seg_index < total_segments:
@@ -285,6 +289,7 @@ class AnalysisJob:
                 except Exception:
                     pass
 
+            motion_desc = (motion or {}).get("description", "")
             if grade == "C":
                 # Near-still + skeleton OK → GT-None automatically, no AI tokens.
                 gestures, confidence = [], 1.0
@@ -292,11 +297,18 @@ class AnalysisJob:
                     f"  ↳ grade C: motion {motion['max_change']:g} < {start_thr:g}"
                     " → GT-None (AI skipped)"
                 )
+                prompt_text = (
+                    "[grade C — AI call skipped by the motion pre-filter]\n"
+                    f"No frame reached the start threshold ({start_thr:g}); "
+                    "auto-coded GT-N (no gesture). No message was sent to the AI.\n\n"
+                    f"motion: {motion_desc}"
+                )
             else:
+                prompt_text = llm.build_prompt(schema, speech, motion_desc)
                 try:
                     res = llm.analyze_strip(
                         provider, api_key, model, strip_png, schema, seg_index,
-                        speech=speech,
+                        speech=speech, motion_desc=motion_desc,
                     )
                 except Exception as e:
                     res = {"gestures": [], "confidence": 0.0, "error": str(e)}
@@ -311,6 +323,14 @@ class AnalysisJob:
                         f"(dropped {gestures})"
                     )
                     gestures = []
+
+            # Save the exact message (text) sent to the AI for later review.
+            try:
+                (prompt_dir / f"seg_{seg_index + 1:04d}.txt").write_text(
+                    prompt_text, encoding="utf-8"
+                )
+            except Exception:
+                pass
 
             review_flag = self._review_flag(grade, confidence)
             row = {

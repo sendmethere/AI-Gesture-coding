@@ -11,6 +11,7 @@ CONFIG_DIR = ROOT / "config"
 LOGS_DIR = ROOT / "logs"
 FRONTEND_DIR = ROOT / "frontend"
 TRANSCRIPTS_DIR = ROOT / "transcripts"
+PROMPTS_DIR = ROOT / "prompts"
 
 SCHEMA_PATH = CONFIG_DIR / "gesture_schema.json"
 SETTINGS_PATH = CONFIG_DIR / "settings.json"
@@ -20,6 +21,6 @@ RESULT_CSV_PATH = RESULTS_DIR / "gesture_result.csv"
 def ensure_dirs() -> None:
     for d in (
         VIDEOS_DIR, CROPS_DIR, STRIPS_DIR, RESULTS_DIR,
-        CONFIG_DIR, LOGS_DIR, TRANSCRIPTS_DIR,
+        CONFIG_DIR, LOGS_DIR, TRANSCRIPTS_DIR, PROMPTS_DIR,
     ):
         d.mkdir(parents=True, exist_ok=True)

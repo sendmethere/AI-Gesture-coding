@@ -47,7 +47,9 @@ const STRINGS = {
     btnCancel: "취소", btnSave: "저장", editTitle: "제스처 수정", btnApply: "적용",
     stripTitle: "AI에 전송된 이미지",
     stripDesc: "왼쪽→오른쪽 순서로 이어붙인 strip 입니다. 프레임 하단 컬러바: 회색=정지 · 노랑=준비 · 초록=시작 · 파랑=진행, 숫자는 손 이동량.",
-    btnClose: "닫기", ovTitle: "Overview — AI 전송 이미지 + 코드",
+    btnClose: "닫기", btnShowPrompt: "📝 전송 메시지 보기", btnHidePrompt: "🙈 메시지 숨기기",
+    errPromptLoad: "전송 메시지를 불러올 수 없습니다 (이 구간은 AI 호출이 없었거나 분석 전입니다).",
+    ovTitle: "Overview — AI 전송 이미지 + 코드",
     ovDesc: "각 구간에 AI로 보낸 strip(6프레임)과 자동 코딩 결과입니다. 스크롤하여 확인하세요.",
     // dynamic
     segments: "{0} / {1} 세그먼트", ovCount: "({0}개 구간)",
@@ -102,7 +104,9 @@ const STRINGS = {
     btnCancel: "Cancel", btnSave: "Save", editTitle: "Edit gestures", btnApply: "Apply",
     stripTitle: "Image sent to the AI",
     stripDesc: "Frames concatenated left → right. Bottom colorbar: gray=still · yellow=prep · green=start · blue=in motion; the number is hand displacement.",
-    btnClose: "Close", ovTitle: "Overview — images sent to AI + codes",
+    btnClose: "Close", btnShowPrompt: "📝 Show message sent", btnHidePrompt: "🙈 Hide message",
+    errPromptLoad: "Could not load the message (this window had no AI call, or analysis hasn't run).",
+    ovTitle: "Overview — images sent to AI + codes",
     ovDesc: "Each segment's strip (6 frames) sent to the AI and its auto-coded result. Scroll to review.",
     segments: "{0} / {1} segments", ovCount: "({0} segments)",
     toastSettingsSaved: "Settings saved", toastSchemaSaved: "Schema saved",
@@ -604,7 +608,10 @@ async function saveEdit() {
 }
 
 // ----------------------------------------------------------- strip preview --
+let stripNo = null;
+
 function openStrip(no) {
+  stripNo = no;
   $("stripLabel").textContent = "#" + no;
   $("stripError").textContent = "";
   const img = $("stripImg");
@@ -614,7 +621,31 @@ function openStrip(no) {
     $("stripError").textContent = t("errStripLoad");
   };
   img.src = `/api/strip/${no}?ts=` + Date.now();
+  // reset the prompt view each time the modal opens
+  const pre = $("stripPrompt");
+  pre.hidden = true;
+  pre.textContent = "";
+  $("stripPromptBtn").textContent = t("btnShowPrompt");
   $("stripModal").hidden = false;
+}
+
+async function toggleStripPrompt() {
+  const pre = $("stripPrompt");
+  const btn = $("stripPromptBtn");
+  if (!pre.hidden) {
+    pre.hidden = true;
+    btn.textContent = t("btnShowPrompt");
+    return;
+  }
+  if (!pre.textContent) {
+    try {
+      pre.textContent = await api(`/api/prompt/${stripNo}?ts=` + Date.now());
+    } catch (e) {
+      pre.textContent = t("errPromptLoad");
+    }
+  }
+  pre.hidden = false;
+  btn.textContent = t("btnHidePrompt");
 }
 
 // --------------------------------------------------------------- overview --
@@ -731,6 +762,7 @@ function wire() {
   $("editCancel").onclick = () => ($("editModal").hidden = true);
   $("editSave").onclick = saveEdit;
   $("stripClose").onclick = () => ($("stripModal").hidden = true);
+  $("stripPromptBtn").onclick = toggleStripPrompt;
   $("overviewBtn").onclick = openOverview;
   $("overviewClose").onclick = () => ($("overviewModal").hidden = true);
   $("langToggle").onclick = () => setLang(LANG === "ko" ? "en" : "ko");

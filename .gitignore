@@ -11,6 +11,7 @@ strips/
 results/
 logs/
 transcripts/
+prompts/
 
 # Video files (never commit footage), anywhere in the tree
 *.mp4

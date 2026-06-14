@@ -89,7 +89,10 @@ class MotionAnalyzer:
         if self.backend == "skeleton":
             res = self._skeleton(frames)
             if res is not None:
-                return self._summarize("skeleton", res, True, still_thr, start_thr)
+                return self._summarize(
+                    "skeleton", res["per_frame"], True, still_thr, start_thr,
+                    vecs=res["vecs"],
+                )
             # Pose failed for this segment (occlusion, side view, blur, …):
             # plan §2.3 → treat as detection failure but still give a framediff
             # signal so the colorbar/threshold logic has something to show.
@@ -100,11 +103,13 @@ class MotionAnalyzer:
         return self._summarize("framediff", fd, True, still_thr, start_thr)
 
     # ----- backends ------------------------------------------------------ #
-    def _skeleton(self, frames: List[np.ndarray]) -> Optional[List[float]]:
+    def _skeleton(self, frames: List[np.ndarray]) -> Optional[dict]:
         """Per-frame max(both-wrist) displacement, normalized by shoulder width.
 
-        Returns None when too many frames lack the landmarks needed to measure
-        motion reliably (plan §2.3 detection-failure criteria).
+        Returns {"per_frame": [...], "vecs": [...]} where vecs[i] is the dominant
+        wrist's normalized motion vector for that frame ({dx, dy, side}) used to
+        describe direction in words. Returns None when too many frames lack the
+        landmarks needed to measure motion reliably (plan §2.3).
         """
         results = self.model(frames, verbose=False)
 
@@ -151,21 +156,33 @@ class MotionAnalyzer:
             return None
 
         base_sw = float(np.median(valid_sw))  # fixed segment baseline (plan §2.2)
+        frame_w = frames[0].shape[1] if frames else 1
 
         per_frame = [0.0]
+        vecs: List[Optional[dict]] = [None]
         for i in range(1, len(frames)):
             prev, cur = wrists[i - 1], wrists[i]
             if prev is None or cur is None:
                 per_frame.append(0.0)
+                vecs.append(None)
                 continue
             change = 0.0
+            best = None
             for a, b in zip(prev, cur):  # left wrist, right wrist
                 if a is None or b is None:
                     continue
-                d = np.hypot((b[0] - a[0]) / base_sw, (b[1] - a[1]) / base_sw)
-                change = max(change, float(d))
+                ndx = (b[0] - a[0]) / base_sw
+                ndy = (b[1] - a[1]) / base_sw
+                d = float(np.hypot(ndx, ndy))
+                if d > change:
+                    change = d
+                    # describe by IMAGE side (matches what the model sees), not
+                    # anatomical left/right which is mirrored in the frame.
+                    side = "left" if b[0] < frame_w / 2 else "right"
+                    best = {"dx": ndx, "dy": ndy, "side": side}
             per_frame.append(change)
-        return per_frame
+            vecs.append(best)
+        return {"per_frame": per_frame, "vecs": vecs}
 
     def _framediff(self, frames: List[np.ndarray]) -> List[float]:
         grays = []
@@ -225,6 +242,61 @@ class MotionAnalyzer:
                 best_i = i + 1  # 1-based
         return best_i
 
+    @staticmethod
+    def _direction(dx: float, dy: float) -> str:
+        """Image-space direction of a motion vector (y points down)."""
+        mag = (dx * dx + dy * dy) ** 0.5
+        if mag < 1e-6:
+            return "in place"
+        vert = "up" if dy < 0 else "down"
+        horiz = "left" if dx < 0 else "right"
+        ax, ay = abs(dx), abs(dy)
+        if ax > 2 * ay:
+            return horiz
+        if ay > 2 * ax:
+            return vert
+        return f"{vert}-{horiz}"
+
+    def _describe(
+        self,
+        source: str,
+        per_frame: List[float],
+        states: List[str],
+        vecs: Optional[List[Optional[dict]]],
+    ) -> str:
+        """One- or two-sentence objective motion summary fed to the LLM."""
+        n = len(per_frame)
+        active = [i for i, s in enumerate(states) if s != "still"]
+        if not active:
+            return "Hands stay essentially still across the window (no significant movement)."
+        lo, hi = active[0] + 1, active[-1] + 1  # 1-based
+        peak = max(range(n), key=lambda i: per_frame[i])
+        span = f"frames {lo}-{hi}" if hi > lo else f"frame {lo}"
+
+        if vecs is not None:  # skeleton: real wrist tracking
+            out = [
+                f"Pose tracking: wrist motion is concentrated in {span} "
+                f"({len(active)}/{n} frames)."
+            ]
+            if peak < len(vecs) and vecs[peak]:
+                v = vecs[peak]
+                out.append(
+                    f"Strongest at f{peak + 1}: a hand on the {v['side']} of the "
+                    f"frame moves {self._direction(v['dx'], v['dy'])} "
+                    f"(normalized {per_frame[peak]:.2f})."
+                )
+                ndx = sum(vecs[i]["dx"] for i in active if vecs[i])
+                ndy = sum(vecs[i]["dy"] for i in active if vecs[i])
+                out.append(f"Net hand path over the window: {self._direction(ndx, ndy)}.")
+            return " ".join(out)
+
+        # framediff fallback: only coarse whole-frame motion, no direction
+        return (
+            f"Frame-difference motion (no skeleton): activity concentrated in "
+            f"{span} ({len(active)}/{n} frames), peak at f{peak + 1} "
+            f"({per_frame[peak]:.2f}); hand direction unavailable."
+        )
+
     def _summarize(
         self,
         source: str,
@@ -232,6 +304,7 @@ class MotionAnalyzer:
         ok: bool,
         still_thr: float,
         start_thr: float,
+        vecs: Optional[List[Optional[dict]]] = None,
     ) -> dict:
         per_frame = self._smooth(per_frame)
         per_frame = [round(float(v), 4) for v in per_frame]
@@ -245,6 +318,7 @@ class MotionAnalyzer:
             "states": states,
             "max_change": round(max_change, 4),
             "start_frame": start_frame,
+            "description": self._describe(source, per_frame, states, vecs),
         }
 
     def _empty(self, source: str) -> dict:
@@ -255,6 +329,7 @@ class MotionAnalyzer:
             "states": [],
             "max_change": 0.0,
             "start_frame": 0,
+            "description": "",
         }
 
 

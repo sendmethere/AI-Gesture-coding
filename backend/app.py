@@ -18,7 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import csv_export, schema_store, settings_store
-from .paths import FRONTEND_DIR, VIDEOS_DIR, STRIPS_DIR, RESULTS_DIR, ensure_dirs
+from .paths import (
+    FRONTEND_DIR, VIDEOS_DIR, STRIPS_DIR, RESULTS_DIR, PROMPTS_DIR, ensure_dirs,
+)
 from .pipeline import JOB
 
 ensure_dirs()
@@ -202,6 +204,18 @@ def get_strip(no: int):
             404, "strip not found (분석 옵션에서 strip 저장이 꺼져 있을 수 있습니다)"
         )
     return FileResponse(f, media_type="image/png")
+
+
+@app.get("/api/prompt/{no}")
+def get_prompt(no: int):
+    """Serve the exact text message that was sent to the AI for this window."""
+    p = STATE["video_path"]
+    if not p:
+        raise HTTPException(404, "no video loaded")
+    f = PROMPTS_DIR / Path(p).stem / f"seg_{no:04d}.txt"
+    if not f.exists():
+        raise HTTPException(404, "prompt not found for this window")
+    return FileResponse(f, media_type="text/plain; charset=utf-8")
 
 
 class UpdateResultBody(BaseModel):
