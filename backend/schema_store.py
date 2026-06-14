@@ -8,24 +8,16 @@ from typing import List
 
 from .paths import SCHEMA_PATH, CONFIG_DIR
 
+# McNeill's gesture typology (plan.v2 §6.1). GT-N (no gesture) is represented by
+# an empty list, so it is not a selectable code here.
 DEFAULT_SCHEMA = {
     "gestures": [
-        {"name": "Deictic", "description": "Pointing at a general object/location (screen=PointScreen, audience=PointAudience)"},
-        {"name": "PointScreen", "description": "Pointing at a specific part of the screen, board, or material"},
-        {"name": "PointAudience", "description": "Pointing at students/audience with hand or arm"},
-        {"name": "Beat", "description": "Repeated rhythmic hand movements for emphasis"},
-        {"name": "Iconic", "description": "Depicting an object's shape/motion with the hands"},
-        {"name": "Metaphoric", "description": "Representing an abstract concept via space/form"},
-        {"name": "Emblematic", "description": "Conventional symbolic gesture (thumbs-up, OK, etc.)"},
-        {"name": "OpenPalm", "description": "Open palm presenting/opening (audience target = OpenPalmAudience)"},
-        {"name": "OpenPalmAudience", "description": "Open palm toward the audience to offer the floor/invite"},
-        {"name": "RaiseHand", "description": "Arm raised above the shoulder to draw attention/nominate"},
-        {"name": "Writing", "description": "Writing/drawing on a board or whiteboard (board work)"},
-        {"name": "LookAtScreen", "description": "Turning gaze/body to the screen or board without pointing"},
-        {"name": "TurnBack", "description": "Turning one's back to the audience"},
-        {"name": "Cohesive", "description": "Re-pointing at a prior target to link the discourse"},
-        {"name": "Nodding", "description": "Nodding up and down to show agreement/affirmation"},
-        {"name": "HeadShake", "description": "Shaking the head to show disagreement/negation"},
+        {"name": "GT-D", "description": "Deictic (지시적): a fingertip or hand extends toward a specific direction or target and holds (pointing)."},
+        {"name": "GT-I", "description": "Iconic (상징적): a circular or curved path that imitates the shape or form of a concrete object."},
+        {"name": "GT-M", "description": "Metaphoric (은유적): gives spatial form/motion to an ABSTRACT idea you can name — e.g. weighing two options like scales, placing past/future or choices left vs right, a rising motion for 'increase', cupped hands as an abstract container. STRICT: do NOT use for plain directional motion that is only rhythmic emphasis (GT-B), for pointing (GT-D), for tracing a concrete object's real shape (GT-I), or for incidental motion. If you cannot state the specific abstract meaning, do not code GT-M."},
+        {"name": "GT-B", "description": "Beat (박자적): short, repeated movements with a steady rhythm, in time with speech (emphasis, not meaning)."},
+        {"name": "GT-E", "description": "Emblematic (관습적): a culturally standardized conventional pattern (e.g., raising a hand, thumbs-up, OK sign)."},
+        {"name": "GT-X", "description": "Unclassifiable (판별 불가): hand or arm movement is present but its gesture type cannot be determined."},
     ]
 }
 

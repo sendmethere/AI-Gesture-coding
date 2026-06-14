@@ -66,6 +66,12 @@ class SettingsBody(BaseModel):
     min_confidence: Optional[float] = None
     include_confidence: Optional[bool] = None
     save_strips: Optional[bool] = None
+    motion_filter: Optional[bool] = None
+    still_threshold: Optional[float] = None
+    start_threshold: Optional[float] = None
+    stt_enabled: Optional[bool] = None
+    stt_model: Optional[str] = None
+    stt_language: Optional[str] = None
 
 
 @app.post("/api/settings")

@@ -45,45 +45,81 @@ def _check(r, provider: str):
     return r
 
 
-def build_prompt(schema: dict) -> str:
+def build_prompt(schema: dict, speech: str = "") -> str:
     lines = []
     for g in schema.get("gestures", []):
         lines.append(f'- {g["name"]}: {g.get("description", "")}')
     catalog = "\n".join(lines)
     names = [g["name"] for g in schema.get("gestures", [])]
 
-    beat_note = ""
-    if any(str(n).strip().lower() == "beat" for n in names):
-        beat_note = (
-            '- Be especially conservative with "Beat": code it ONLY for clearly '
-            "rhythmic, repeated hand movements used for emphasis. Do NOT use Beat "
-            "for small, incidental, transitional, or resting hand motion.\n"
+    speech_note = ""
+    if speech:
+        speech_note = (
+            f'\nThe teacher is speaking during this segment: "{speech}"\n'
+            "Use this speech only as CONTEXT to disambiguate the gesture (e.g. a "
+            "deictic point vs an iconic shape); do not code a gesture that is not "
+            "physically performed just because the words suggest one.\n"
+        )
+
+    # Detailed decision guide for McNeill GT-* schemas. Skipped automatically if
+    # the user has swapped in a non-GT schema (falls back to the generic rules).
+    is_mcneill = any(str(n).upper().startswith("GT-") for n in names)
+    guide = ""
+    if is_mcneill:
+        guide = (
+            "\nDecision guide — work through it in order:\n"
+            "1. Is there a clear, deliberate, communicative hand/arm gesture? "
+            "If the motion is incidental, transitional, fidgeting, adjusting "
+            "clothes/hair, or just holding an object, return [] (GT-N).\n"
+            "2. If yes, choose the type by what the hands actually do:\n"
+            "   • GT-D (Deictic): an extended finger/hand/arm aims at a specific "
+            "target or direction and briefly holds.\n"
+            "   • GT-I (Iconic): the hands trace the LITERAL shape, size, or "
+            "physical motion of a CONCRETE object (a circle, a slope, a box).\n"
+            "   • GT-M (Metaphoric): the movement maps a NAMEABLE ABSTRACT idea "
+            "onto space — comparing/weighing options, a timeline or sequence laid "
+            "in space, growth/decline as up/down, an idea held in a 'container'. "
+            "You must be able to state the abstract meaning in words.\n"
+            "   • GT-B (Beat): short, repeated, low-amplitude strokes that keep "
+            "rhythm with speech for emphasis; they carry no pictorial meaning.\n"
+            "   • GT-E (Emblematic): a fixed, culturally conventional sign "
+            "(raised open palm = stop/attention, thumbs-up, OK, raising a hand).\n"
+            "   • GT-X: a clear gesture is present but its type is genuinely "
+            "ambiguous.\n"
+            "3. METAPHORIC IS THE STRICTEST CATEGORY. Only code GT-M when you can "
+            "name the specific abstract concept being spatialized. Plain "
+            "directional motion is NOT metaphoric by itself: if it is rhythmic "
+            "emphasis use GT-B, if it depicts a real object use GT-I, and if you "
+            "cannot name an abstract meaning use GT-X or return [] — never default "
+            "to GT-M.\n"
         )
 
     return (
-        "You are an expert coder of teacher gestures in microteaching videos.\n"
-        "The image is a horizontal strip of 6 sequential video frames of one "
-        "teacher, spaced ~0.5s apart (about 3 seconds total), read left to "
-        "right.\n\n"
-        "Classify the teacher gesture(s) visible across this 3-second segment "
-        "using ONLY the following categories:\n"
-        f"{catalog}\n\n"
-        "Rules:\n"
+        "You are an expert coder of teacher gestures in microteaching videos, "
+        "using McNeill's gesture typology.\n"
+        "The image is a horizontal strip of sequential video frames of one "
+        "teacher, spaced a fraction of a second apart, read left to right.\n"
+        "A colored bar under each frame may indicate measured hand motion: "
+        "gray=still, yellow=preparing, green=gesture start, blue=in motion; the "
+        "number is the normalized hand displacement. Use it to locate where a "
+        "gesture actually happens, but base the CODE on what the hands do.\n"
+        + speech_note
+        + "\nClassify the teacher gesture(s) visible across this segment using "
+        "ONLY the following categories:\n"
+        f"{catalog}\n"
+        + guide
+        + "\nRules:\n"
         f"- Use only these exact names: {names}\n"
-        "- IMPORTANT: Most 3-second segments contain NO codeable gesture. The "
-        "DEFAULT answer is an empty list []. Only assign a code when a clear, "
-        "deliberate, communicative gesture is actually performed.\n"
-        "- If the motion is ambiguous, minimal, incidental, transitional, or you "
-        "are not confident, return [] (no gesture). Do not guess.\n"
-        + beat_note
-        + "- Prefer the MOST SPECIFIC applicable category over a general one "
-        "(e.g., if the pointing target is the screen/board use the screen code, "
-        "if it is the audience use the audience code, rather than generic "
-        "pointing).\n"
+        "- If there is no meaningful, communicative hand/arm gesture, return an "
+        "empty list [] (this is GT-N / no gesture). Do not guess.\n"
+        "- Use GT-X only when a gesture is clearly present but you cannot "
+        "determine its type.\n"
+        "- Code GT-B (Beat) only for clearly rhythmic, repeated movements used for "
+        "emphasis — not for small, incidental, transitional, or resting motion.\n"
         "- Assign multiple codes only when several distinct gestures clearly "
         "co-occur in the segment.\n"
         "- Respond with STRICT JSON only, no prose, no markdown fences:\n"
-        '{"gestures": ["Name", ...], "confidence": 0.0}\n'
+        '{"gestures": ["GT-D", ...], "confidence": 0.0}\n'
         "- confidence is your overall certainty for this segment (0.0-1.0)."
     )
 
@@ -141,7 +177,7 @@ def _mock(strip_png: bytes, schema: dict, seg_index: int) -> dict:
     return {"gestures": pick, "confidence": conf}
 
 
-def _openai(strip_png, schema, api_key, model) -> dict:
+def _openai(strip_png, schema, api_key, model, speech="") -> dict:
     b64 = base64.b64encode(strip_png).decode()
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
@@ -154,7 +190,7 @@ def _openai(strip_png, schema, api_key, model) -> dict:
             {
                 "role": "user",
                 "content": [
-                    {"type": "text", "text": build_prompt(schema)},
+                    {"type": "text", "text": build_prompt(schema, speech)},
                     {
                         "type": "image_url",
                         "image_url": {"url": f"data:image/png;base64,{b64}"},
@@ -172,7 +208,7 @@ def _openai(strip_png, schema, api_key, model) -> dict:
     return _parse_json(text)
 
 
-def _anthropic(strip_png, schema, api_key, model) -> dict:
+def _anthropic(strip_png, schema, api_key, model, speech="") -> dict:
     b64 = base64.b64encode(strip_png).decode()
     payload = {
         "model": model,
@@ -189,7 +225,7 @@ def _anthropic(strip_png, schema, api_key, model) -> dict:
                             "data": b64,
                         },
                     },
-                    {"type": "text", "text": build_prompt(schema)},
+                    {"type": "text", "text": build_prompt(schema, speech)},
                 ],
             }
         ],
@@ -210,7 +246,7 @@ def _anthropic(strip_png, schema, api_key, model) -> dict:
     return _parse_json(text)
 
 
-def _gemini(strip_png, schema, api_key, model) -> dict:
+def _gemini(strip_png, schema, api_key, model, speech="") -> dict:
     b64 = base64.b64encode(strip_png).decode()
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
@@ -220,7 +256,7 @@ def _gemini(strip_png, schema, api_key, model) -> dict:
         "contents": [
             {
                 "parts": [
-                    {"text": build_prompt(schema)},
+                    {"text": build_prompt(schema, speech)},
                     {"inline_data": {"mime_type": "image/png", "data": b64}},
                 ]
             }
@@ -241,6 +277,7 @@ def analyze_strip(
     strip_png: bytes,
     schema: dict,
     seg_index: int = 0,
+    speech: str = "",
 ) -> dict:
     provider = (provider or "mock").lower()
     model = model or DEFAULT_MODELS.get(provider, "")
@@ -249,11 +286,11 @@ def analyze_strip(
     if provider == "mock":
         result = _mock(strip_png, schema, seg_index)
     elif provider == "openai":
-        result = _openai(strip_png, schema, api_key, model)
+        result = _openai(strip_png, schema, api_key, model, speech)
     elif provider == "anthropic":
-        result = _anthropic(strip_png, schema, api_key, model)
+        result = _anthropic(strip_png, schema, api_key, model, speech)
     elif provider == "gemini":
-        result = _gemini(strip_png, schema, api_key, model)
+        result = _gemini(strip_png, schema, api_key, model, speech)
     else:
         raise ValueError(f"unknown provider: {provider}")
 

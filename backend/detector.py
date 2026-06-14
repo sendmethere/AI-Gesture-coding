@@ -24,7 +24,7 @@ class TeacherDetector:
     def status(self) -> str:
         return "yolo" if self.available else "fallback(full-frame)"
 
-    def crop_teacher(self, frame_bgr: np.ndarray, pad: float = 0.10) -> np.ndarray:
+    def crop_teacher(self, frame_bgr: np.ndarray, pad: float = 0.20) -> np.ndarray:
         """Return a crop around the largest detected person, else the frame."""
         if not self.available or self.model is None:
             return frame_bgr
