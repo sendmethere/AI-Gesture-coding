@@ -246,9 +246,11 @@
       <h3><span data-i18n="stripTitle">AI에 전송된 이미지</span> — <span id="stripLabel"></span></h3>
       <p class="muted" data-i18n="stripDesc">왼쪽→오른쪽, 0.5초 간격 6프레임(=3초)을 이어붙인 strip 입니다.</p>
       <div class="strip-view"><img id="stripImg" alt="strip" /></div>
+      <p id="stripPoseHint" class="muted" data-i18n="poseHint" hidden>청록선=어깨 너비(정규화 기준) · 빨강점=손목(이동량 측정 대상) · 초록선=어깨–손목. 전체 프레임에서 YOLO-pose가 인식한 골격입니다.</p>
       <div id="stripError" class="error"></div>
       <pre id="stripPrompt" class="prompt-view" hidden></pre>
       <div class="modal-actions">
+        <button id="stripPoseBtn" class="btn ghost" data-i18n="btnShowPose">🦴 뼈대 보기</button>
         <button id="stripPromptBtn" class="btn ghost" data-i18n="btnShowPrompt">📝 전송 메시지 보기</button>
         <button id="stripClose" class="btn primary" data-i18n="btnClose">닫기</button>
       </div>

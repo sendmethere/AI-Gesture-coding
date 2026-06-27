@@ -288,6 +288,15 @@ class AnalysisJob:
                     strip.save(strip_dir / f"seg_{seg_index + 1:04d}.png")
                 except Exception:
                     pass
+                # Scientific record: full-frame strip with the detected skeleton
+                # overlaid (pose verification). Only when pose actually tracked.
+                if motion and motion.get("points"):
+                    try:
+                        pose = self._make_pose_strip(frames, motion, timestamps)
+                        if pose is not None:
+                            pose.save(strip_dir / f"pose_{seg_index + 1:04d}.png")
+                    except Exception:
+                        pass
 
             motion_desc = (motion or {}).get("description", "")
             if grade == "C":
@@ -450,6 +459,63 @@ class AnalysisJob:
                 draw.text((tx, ty), txt, fill=(255, 255, 255))
             x += im.width
         return strip
+
+    @staticmethod
+    def _draw_skeleton(frame: np.ndarray, pt: dict) -> None:
+        """Overlay the tracked keypoints on a FULL frame (in place, BGR).
+
+        Shows exactly what YOLO-pose detected and the two quantities the motion
+        metric is built from: the shoulder line (the normalizer) and the wrist
+        markers (whose displacement is measured). A scientific record of how the
+        pose was recognized and the change measured.
+        """
+        ls, rs = pt.get("ls"), pt.get("rs")
+        lw, rw = pt.get("lw"), pt.get("rw")
+
+        def ip(p):
+            return (int(round(p[0])), int(round(p[1])))
+
+        # shoulder line = the normalizer (cyan)
+        if ls and rs:
+            cv2.line(frame, ip(ls), ip(rs), (255, 200, 0), 3)
+        # shoulder→wrist links (green) + wrist markers (red = what's measured)
+        for s, w in ((ls, lw), (rs, rw)):
+            if s and w:
+                cv2.line(frame, ip(s), ip(w), (80, 220, 80), 2)
+        for p in (ls, rs):
+            if p:
+                cv2.circle(frame, ip(p), 5, (255, 200, 0), -1)
+        for p in (lw, rw):
+            if p:
+                cv2.circle(frame, ip(p), 7, (0, 0, 255), -1)
+
+    def _make_pose_strip(
+        self,
+        frames: List[np.ndarray],
+        motion: dict,
+        timestamps: Optional[List[str]] = None,
+    ) -> Optional[Image.Image]:
+        """Skeleton-overlay strip from the FULL frames pose actually ran on.
+
+        Returns None when there are no per-frame keypoints (framediff fallback or
+        pose failure) — nothing to verify in that case.
+        """
+        points = motion.get("points")
+        if not points:
+            return None
+        drawn = []
+        for i, f in enumerate(frames):
+            c = f.copy()
+            if i < len(points) and points[i]:
+                self._draw_skeleton(c, points[i])
+            drawn.append(c)
+        return self._make_strip(
+            drawn,
+            states=motion.get("states"),
+            per_frame=motion.get("per_frame"),
+            start_frame=motion.get("start_frame", 0),
+            timestamps=timestamps,
+        )
 
     def _png_bytes(self, img: Image.Image) -> bytes:
         buf = io.BytesIO()

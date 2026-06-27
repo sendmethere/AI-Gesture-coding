@@ -59,6 +59,9 @@ const STRINGS = {
     stripTitle: "AI에 전송된 이미지",
     stripDesc: "왼쪽→오른쪽 순서로 이어붙인 strip 입니다. 프레임 하단 컬러바: 회색=정지 · 노랑=준비 · 초록=시작 · 파랑=진행, 숫자는 손 이동량.",
     btnClose: "닫기", btnShowPrompt: "📝 전송 메시지 보기", btnHidePrompt: "🙈 메시지 숨기기",
+    btnShowPose: "🦴 뼈대 보기", btnShowAiStrip: "🖼 AI 이미지 보기",
+    poseHint: "청록선=어깨 너비(정규화 기준) · 빨강점=손목(이동량 측정 대상) · 초록선=어깨–손목. 전체 프레임에서 YOLO-pose가 인식한 골격입니다.",
+    errPoseLoad: "뼈대 오버레이를 불러올 수 없습니다 (모션 필터가 꺼져 있었거나 포즈 추적에 실패한 구간입니다).",
     errPromptLoad: "전송 메시지를 불러올 수 없습니다 (이 구간은 AI 호출이 없었거나 분석 전입니다).",
     ovTitle: "Overview — AI 전송 이미지 + 코드",
     ovDesc: "각 구간에 AI로 보낸 strip(6프레임)과 자동 코딩 결과입니다. 스크롤하여 확인하세요.",
@@ -127,6 +130,9 @@ const STRINGS = {
     stripTitle: "Image sent to the AI",
     stripDesc: "Frames concatenated left → right. Bottom colorbar: gray=still · yellow=prep · green=start · blue=in motion; the number is hand displacement.",
     btnClose: "Close", btnShowPrompt: "📝 Show message sent", btnHidePrompt: "🙈 Hide message",
+    btnShowPose: "🦴 Show skeleton", btnShowAiStrip: "🖼 Show AI image",
+    poseHint: "Cyan line = shoulder width (normalizer) · red dots = wrists (displacement measured here) · green = shoulder–wrist. The skeleton YOLO-pose detected on the full frames.",
+    errPoseLoad: "Could not load the skeleton overlay (motion filter was off, or pose tracking failed for this window).",
     errPromptLoad: "Could not load the message (this window had no AI call, or analysis hasn't run).",
     ovTitle: "Overview — images sent to AI + codes",
     ovDesc: "Each segment's strip (6 frames) sent to the AI and its auto-coded result. Scroll to review.",
@@ -636,24 +642,38 @@ async function saveEdit() {
 
 // ----------------------------------------------------------- strip preview --
 let stripNo = null;
+let stripPose = false; // false = AI strip, true = skeleton overlay
 
-function openStrip(no) {
-  stripNo = no;
-  $("stripLabel").textContent = "#" + no;
-  $("stripError").textContent = "";
+function loadStripImg() {
   const img = $("stripImg");
+  const kind = stripPose ? "pose" : "strip";
   img.style.display = "none";
   img.onload = () => (img.style.display = "block");
   img.onerror = () => {
-    $("stripError").textContent = t("errStripLoad");
+    $("stripError").textContent = stripPose ? t("errPoseLoad") : t("errStripLoad");
   };
-  img.src = `/api/strip/${no}?ts=` + Date.now();
+  $("stripError").textContent = "";
+  img.src = `/api/${kind}/${stripNo}?ts=` + Date.now();
+  $("stripPoseHint").hidden = !stripPose;
+  $("stripPoseBtn").textContent = stripPose ? t("btnShowAiStrip") : t("btnShowPose");
+}
+
+function openStrip(no) {
+  stripNo = no;
+  stripPose = false;
+  $("stripLabel").textContent = "#" + no;
+  loadStripImg();
   // reset the prompt view each time the modal opens
   const pre = $("stripPrompt");
   pre.hidden = true;
   pre.textContent = "";
   $("stripPromptBtn").textContent = t("btnShowPrompt");
   $("stripModal").hidden = false;
+}
+
+function toggleStripPose() {
+  stripPose = !stripPose;
+  loadStripImg();
 }
 
 async function toggleStripPrompt() {
@@ -966,6 +986,7 @@ function wire() {
   $("editSave").onclick = saveEdit;
   $("stripClose").onclick = () => ($("stripModal").hidden = true);
   $("stripPromptBtn").onclick = toggleStripPrompt;
+  $("stripPoseBtn").onclick = toggleStripPose;
   $("overviewBtn").onclick = openOverview;
   $("overviewClose").onclick = () => ($("overviewModal").hidden = true);
   $("langToggle").onclick = () => setLang(LANG === "ko" ? "en" : "ko");

@@ -91,7 +91,8 @@ class MotionAnalyzer:
             if res is not None:
                 return self._summarize(
                     "skeleton", res["per_frame"], True, still_thr, start_thr,
-                    vecs=res["vecs"],
+                    vecs=res["vecs"], points=res["points"],
+                    base_sw=res["base_sw"],
                 )
             # Pose failed for this segment (occlusion, side view, blur, …):
             # plan §2.3 → treat as detection failure but still give a framediff
@@ -106,21 +107,26 @@ class MotionAnalyzer:
     def _skeleton(self, frames: List[np.ndarray]) -> Optional[dict]:
         """Per-frame max(both-wrist) displacement, normalized by shoulder width.
 
-        Returns {"per_frame": [...], "vecs": [...]} where vecs[i] is the dominant
-        wrist's normalized motion vector for that frame ({dx, dy, side}) used to
-        describe direction in words. Returns None when too many frames lack the
-        landmarks needed to measure motion reliably (plan §2.3).
+        Returns {"per_frame": [...], "vecs": [...], "points": [...],
+        "base_sw": float} where vecs[i] is the dominant wrist's normalized motion
+        vector for that frame ({dx, dy, side}) used to describe direction in
+        words, and points[i] holds the raw pixel keypoints ({ls, rs, lw, rw},
+        each (x, y) or None) so the overlay can show exactly what was detected.
+        Returns None when too many frames lack the landmarks needed to measure
+        motion reliably (plan §2.3).
         """
         results = self.model(frames, verbose=False)
 
         wrists: List[Optional[tuple]] = []  # ((lx,ly),(rx,ry)) per frame, px
         shoulder_w: List[Optional[float]] = []
+        points: List[dict] = []  # raw px keypoints per frame, for the overlay
         for r in results:
             kp = getattr(r, "keypoints", None)
             boxes = getattr(r, "boxes", None)
             if kp is None or kp.xy is None or len(kp.xy) == 0:
                 wrists.append(None)
                 shoulder_w.append(None)
+                points.append({"ls": None, "rs": None, "lw": None, "rw": None})
                 continue
             # Pick the largest detected person (matches detector.py cropping).
             idx = 0
@@ -148,6 +154,7 @@ class MotionAnalyzer:
 
             lw, rw = pt(L_WRIST), pt(R_WRIST)
             wrists.append((lw, rw) if (lw or rw) else None)
+            points.append({"ls": ls, "rs": rs, "lw": lw, "rw": rw})
 
         valid_sw = [s for s in shoulder_w if s and s > 1e-3]
         usable = sum(1 for w in wrists if w is not None)
@@ -182,7 +189,12 @@ class MotionAnalyzer:
                     best = {"dx": ndx, "dy": ndy, "side": side}
             per_frame.append(change)
             vecs.append(best)
-        return {"per_frame": per_frame, "vecs": vecs}
+        return {
+            "per_frame": per_frame,
+            "vecs": vecs,
+            "points": points,
+            "base_sw": base_sw,
+        }
 
     def _framediff(self, frames: List[np.ndarray]) -> List[float]:
         grays = []
@@ -305,6 +317,8 @@ class MotionAnalyzer:
         still_thr: float,
         start_thr: float,
         vecs: Optional[List[Optional[dict]]] = None,
+        points: Optional[List[dict]] = None,
+        base_sw: Optional[float] = None,
     ) -> dict:
         per_frame = self._smooth(per_frame)
         per_frame = [round(float(v), 4) for v in per_frame]
@@ -319,6 +333,8 @@ class MotionAnalyzer:
             "max_change": round(max_change, 4),
             "start_frame": start_frame,
             "description": self._describe(source, per_frame, states, vecs),
+            "points": points,      # raw px keypoints per frame (skeleton only)
+            "base_sw": base_sw,    # shoulder-width normalizer in px
         }
 
     def _empty(self, source: str) -> dict:

@@ -206,6 +206,20 @@ def get_strip(no: int):
     return FileResponse(f, media_type="image/png")
 
 
+@app.get("/api/pose/{no}")
+def get_pose(no: int):
+    """Serve the skeleton-overlay strip (full frames with detected keypoints)."""
+    p = STATE["video_path"]
+    if not p:
+        raise HTTPException(404, "no video loaded")
+    f = STRIPS_DIR / Path(p).stem / f"pose_{no:04d}.png"
+    if not f.exists():
+        raise HTTPException(
+            404, "pose overlay not found (모션 필터가 꺼져 있었거나 포즈 추적 실패)"
+        )
+    return FileResponse(f, media_type="image/png")
+
+
 @app.get("/api/prompt/{no}")
 def get_prompt(no: int):
     """Serve the exact text message that was sent to the AI for this window."""
