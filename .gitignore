@@ -32,6 +32,7 @@ config/settings.json
 # Internal planning docs (not for the public repo)
 plan.md
 plan2.md
+overview-of-development.md
 
 # OS
 .DS_Store
