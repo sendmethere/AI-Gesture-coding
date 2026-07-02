@@ -1,7 +1,12 @@
 """LLM Vision analysis (plan.md Step 5).
 
-Sends a combined "strip" image plus the gesture schema to an LLM and parses a
-strict-JSON response: {"gestures": [...], "confidence": 0.0-1.0}.
+Sends the segment's frames (each as a SEPARATE image, in chronological order)
+plus the gesture schema to an LLM and parses a strict-JSON response:
+{"gestures": [...], "confidence": 0.0-1.0}.
+
+Frames are sent individually rather than pixel-concatenated into one strip, so
+every frame is encoded by the vision model at full resolution and the model
+reads them as an ordered sequence (UPDATE.md).
 
 Providers: openai | anthropic | gemini | mock
 The "mock" provider needs no API key and lets the whole app run end-to-end for
@@ -82,28 +87,32 @@ def build_prompt(schema: dict, speech: str = "", motion_desc: str = "") -> str:
             "If the motion is incidental, transitional, fidgeting, adjusting "
             "clothes/hair, or just holding an object, return [] (GT-N).\n"
             "2. If yes, choose the type by what the hands actually do:\n"
-            "   • GT-D (Deictic): an extended finger/hand/arm (or pen/pointer) "
-            "aims at a specific target or direction and briefly holds — e.g. "
-            "pointing at a word on the board, at a student, or 'over there'.\n"
-            "   • GT-I (Iconic): depicts the LITERAL shape, SIZE, or physical "
-            "motion of a CONCRETE object/event — tracing a circle or box, hands "
-            "spreading apart for a large object or together for a small one, "
+            "   • GT-D (Deictic): concrete or abstract pointing — an extended "
+            "finger/hand/arm (or pen/pointer) aims at a target or direction to "
+            "direct attention to the visual referent currently being talked "
+            "about, e.g. pointing at a word on the board, at a student, or "
+            "'over there'.\n"
+            "   • GT-I (Iconic): shows what is being said pictorially and 'just "
+            "in time' — depicts the LITERAL shape, SIZE, or physical motion of a "
+            "CONCRETE object/event: tracing a circle or box, hands spreading "
+            "apart for a large object or together for a small one, "
             "widening/hunching the body to show something big vs tiny, miming "
             "pouring or a bouncing ball.\n"
-            "   • GT-M (Metaphoric): gives an abstract idea a spatial/physical "
-            "form — presenting an idea on an open palm or cupped hands (conduit), "
-            "contrasting concepts placed left vs right, steps or a timeline laid "
-            "across space, up/forward=more/future and down/back=less/past, "
-            "weighing options like a balance, expansive hands for a 'big' idea. "
-            "Look for a recognizable image-to-idea mapping. (Showing the physical "
-            "size of a REAL object is GT-I; only abstract magnitude with no real "
-            "referent is GT-M.)\n"
-            "   • GT-B (Beat): short, quick, repeated up-down/back-forth strokes "
-            "that keep rhythm with speech for emphasis — e.g. tapping down on "
-            "stressed words or small chops while listing items. The same simple "
-            "motion repeats and carries no pictorial meaning.\n"
-            "   • GT-E (Emblematic): a fixed, culturally conventional sign "
-            "(raised open palm = stop/attention, thumbs-up, OK, raising a hand).\n"
+            "   • GT-M (Metaphoric): like an iconic gesture, but the depicted "
+            "content is an ABSTRACT idea, not a physically present object — it "
+            "makes an invisible idea visible through abstraction: presenting an "
+            "idea on an open palm or cupped hands (conduit), contrasting concepts "
+            "placed left vs right, steps or a timeline laid across space, "
+            "up/forward=more/future and down/back=less/past, weighing options "
+            "like a balance, expansive hands for a 'big' idea. Look for a "
+            "recognizable image-to-idea mapping. (Showing the physical size of a "
+            "REAL object is GT-I; only abstract magnitude with no real referent "
+            "is GT-M.)\n"
+            "   • GT-B (Beat): any hand movement timed to the RHYTHM of speech, "
+            "non-pictorial, emphasizing the words — short, quick, repeated "
+            "up-down/back-forth strokes such as tapping down on stressed words or "
+            "small chops while listing items. The same simple motion repeats and "
+            "carries no pictorial meaning.\n"
             "   • GT-X: a clear gesture is present but its type is genuinely "
             "ambiguous.\n"
             "3. Telling GT-M apart: if the motion carries a spatial/imagistic "
@@ -118,8 +127,9 @@ def build_prompt(schema: dict, speech: str = "", motion_desc: str = "") -> str:
     return (
         "You are an expert coder of teacher gestures in microteaching videos, "
         "using McNeill's gesture typology.\n"
-        "The image is a horizontal strip of sequential video frames of one "
-        "teacher, spaced a fraction of a second apart, read left to right.\n"
+        "You are given a sequence of individual video frames of one teacher, in "
+        "chronological order, spaced a fraction of a second apart — read them as "
+        "consecutive moments of a single ~3 second segment.\n"
         "A colored bar under each frame may indicate measured hand motion: "
         "gray=still, yellow=preparing, green=gesture start, blue=in motion; the "
         "number is the normalized hand displacement. Use it to locate where a "
@@ -184,7 +194,7 @@ def _filter_to_schema(result: dict, valid_names: List[str]) -> dict:
 # --------------------------------------------------------------------------- #
 # Providers
 # --------------------------------------------------------------------------- #
-def _mock(strip_png: bytes, schema: dict, seg_index: int) -> dict:
+def _mock(frame_pngs: List[bytes], schema: dict, seg_index: int) -> dict:
     names = [g["name"] for g in schema.get("gestures", [])]
     if not names:
         return {"gestures": [], "confidence": 0.0}
@@ -199,27 +209,21 @@ def _mock(strip_png: bytes, schema: dict, seg_index: int) -> dict:
     return {"gestures": pick, "confidence": conf}
 
 
-def _openai(strip_png, schema, api_key, model, speech="", motion_desc="") -> dict:
-    b64 = base64.b64encode(strip_png).decode()
+def _openai(frame_pngs, schema, api_key, model, speech="", motion_desc="") -> dict:
     url = "https://api.openai.com/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}"}
+    content = [{"type": "text", "text": build_prompt(schema, speech, motion_desc)}]
+    for png in frame_pngs:
+        b64 = base64.b64encode(png).decode()
+        content.append(
+            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+        )
     # Newer models (gpt-5 / o-series) require `max_completion_tokens` and only
     # accept the default temperature, so we use the modern param and drop
     # temperature if the API rejects it.
     base = {
         "model": model,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": build_prompt(schema, speech, motion_desc)},
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:image/png;base64,{b64}"},
-                    },
-                ],
-            }
-        ],
+        "messages": [{"role": "user", "content": content}],
         "max_completion_tokens": 800,
     }
     r = requests.post(url, headers=headers, json={**base, "temperature": 0}, timeout=TIMEOUT)
@@ -230,27 +234,25 @@ def _openai(strip_png, schema, api_key, model, speech="", motion_desc="") -> dic
     return _parse_json(text)
 
 
-def _anthropic(strip_png, schema, api_key, model, speech="", motion_desc="") -> dict:
-    b64 = base64.b64encode(strip_png).decode()
+def _anthropic(frame_pngs, schema, api_key, model, speech="", motion_desc="") -> dict:
+    content = []
+    for png in frame_pngs:
+        b64 = base64.b64encode(png).decode()
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": "image/png",
+                    "data": b64,
+                },
+            }
+        )
+    content.append({"type": "text", "text": build_prompt(schema, speech, motion_desc)})
     payload = {
         "model": model,
         "max_tokens": 800,
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": b64,
-                        },
-                    },
-                    {"type": "text", "text": build_prompt(schema, speech, motion_desc)},
-                ],
-            }
-        ],
+        "messages": [{"role": "user", "content": content}],
     }
     r = requests.post(
         "https://api.anthropic.com/v1/messages",
@@ -268,21 +270,17 @@ def _anthropic(strip_png, schema, api_key, model, speech="", motion_desc="") -> 
     return _parse_json(text)
 
 
-def _gemini(strip_png, schema, api_key, model, speech="", motion_desc="") -> dict:
-    b64 = base64.b64encode(strip_png).decode()
+def _gemini(frame_pngs, schema, api_key, model, speech="", motion_desc="") -> dict:
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{model}:generateContent?key={api_key}"
     )
+    parts = [{"text": build_prompt(schema, speech, motion_desc)}]
+    for png in frame_pngs:
+        b64 = base64.b64encode(png).decode()
+        parts.append({"inline_data": {"mime_type": "image/png", "data": b64}})
     payload = {
-        "contents": [
-            {
-                "parts": [
-                    {"text": build_prompt(schema, speech, motion_desc)},
-                    {"inline_data": {"mime_type": "image/png", "data": b64}},
-                ]
-            }
-        ],
+        "contents": [{"parts": parts}],
         "generationConfig": {"temperature": 0, "maxOutputTokens": 800},
     }
     r = requests.post(url, json=payload, timeout=TIMEOUT)
@@ -292,11 +290,11 @@ def _gemini(strip_png, schema, api_key, model, speech="", motion_desc="") -> dic
     return _parse_json(text)
 
 
-def analyze_strip(
+def analyze_frames(
     provider: str,
     api_key: str,
     model: str,
-    strip_png: bytes,
+    frame_pngs: List[bytes],
     schema: dict,
     seg_index: int = 0,
     speech: str = "",
@@ -307,13 +305,13 @@ def analyze_strip(
     valid_names = [g["name"] for g in schema.get("gestures", [])]
 
     if provider == "mock":
-        result = _mock(strip_png, schema, seg_index)
+        result = _mock(frame_pngs, schema, seg_index)
     elif provider == "openai":
-        result = _openai(strip_png, schema, api_key, model, speech, motion_desc)
+        result = _openai(frame_pngs, schema, api_key, model, speech, motion_desc)
     elif provider == "anthropic":
-        result = _anthropic(strip_png, schema, api_key, model, speech, motion_desc)
+        result = _anthropic(frame_pngs, schema, api_key, model, speech, motion_desc)
     elif provider == "gemini":
-        result = _gemini(strip_png, schema, api_key, model, speech, motion_desc)
+        result = _gemini(frame_pngs, schema, api_key, model, speech, motion_desc)
     else:
         raise ValueError(f"unknown provider: {provider}")
 

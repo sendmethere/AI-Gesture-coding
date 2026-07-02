@@ -278,16 +278,24 @@ class MotionAnalyzer:
     ) -> str:
         """One- or two-sentence objective motion summary fed to the LLM."""
         n = len(per_frame)
+        # Explicit per-frame magnitude series so the model can read the motion
+        # trajectory numerically (each value is also drawn on its frame image).
+        series = "[" + ", ".join(f"{v:.2f}" for v in per_frame) + "]"
+        series_line = f"Per-frame normalized hand displacement (f1-f{n}): {series}. "
         active = [i for i, s in enumerate(states) if s != "still"]
         if not active:
-            return "Hands stay essentially still across the window (no significant movement)."
+            return (
+                series_line
+                + "Hands stay essentially still across the window (no significant movement)."
+            )
         lo, hi = active[0] + 1, active[-1] + 1  # 1-based
         peak = max(range(n), key=lambda i: per_frame[i])
         span = f"frames {lo}-{hi}" if hi > lo else f"frame {lo}"
 
         if vecs is not None:  # skeleton: real wrist tracking
             out = [
-                f"Pose tracking: wrist motion is concentrated in {span} "
+                series_line
+                + f"Pose tracking: wrist motion is concentrated in {span} "
                 f"({len(active)}/{n} frames)."
             ]
             if peak < len(vecs) and vecs[peak]:
@@ -304,7 +312,8 @@ class MotionAnalyzer:
 
         # framediff fallback: only coarse whole-frame motion, no direction
         return (
-            f"Frame-difference motion (no skeleton): activity concentrated in "
+            series_line
+            + f"Frame-difference motion (no skeleton): activity concentrated in "
             f"{span} ({len(active)}/{n} frames), peak at f{peak + 1} "
             f"({per_frame[peak]:.2f}); hand direction unavailable."
         )

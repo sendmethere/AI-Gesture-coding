@@ -11,6 +11,11 @@ of the pipeline runs unchanged (same graceful-fallback pattern as detector.py /
 motion.py). Audio is decoded straight from the video container via PyAV, so no
 external ffmpeg binary is required.
 
+We decode ONLY the analyzed [t0, t1] range ourselves and hand the waveform to
+Whisper. Passing the video path instead makes faster-whisper decode the WHOLE
+audio track before it applies clip_timestamps — on a 20-minute lecture that is
+minutes of wasted decoding just to transcribe a 60-second window.
+
 Transcripts are cached as JSON per (video, model, language, time-range) so
 re-running analysis on the same clip is instant.
 """
@@ -20,6 +25,49 @@ from pathlib import Path
 from typing import Callable, List, Optional
 
 from .paths import TRANSCRIPTS_DIR
+
+SAMPLE_RATE = 16000  # Whisper input rate
+
+
+def _decode_range(video_path: str, t0: float, t1: float):
+    """Decode mono float32 audio for [t0, t1] (absolute secs) via PyAV.
+
+    Returns (samples, base) where `samples` is a 16 kHz numpy array and `base`
+    is the absolute video time of sample 0 (whisper times are relative to it).
+    Only this range is decoded, so cost scales with the window, not the video.
+    """
+    import av
+    import numpy as np
+
+    container = av.open(video_path)
+    try:
+        stream = container.streams.audio[0]
+    except (IndexError, KeyError):
+        container.close()
+        return np.zeros(0, dtype=np.float32), t0
+    # Seek is keyframe-based; land a bit before t0 and keep frames overlapping.
+    container.seek(int(max(0.0, t0 - 0.5) * av.time_base))
+    resampler = av.AudioResampler(format="flt", layout="mono", rate=SAMPLE_RATE)
+    chunks, base = [], None
+    try:
+        for frame in container.decode(stream):
+            if frame.pts is None:
+                continue
+            ts = float(frame.pts * frame.time_base)
+            if ts > t1:
+                break
+            dur = frame.samples / frame.sample_rate if frame.sample_rate else 0.0
+            if ts + dur < t0:
+                continue  # entirely before the window
+            if base is None:
+                base = ts
+            for rf in resampler.resample(frame):
+                chunks.append(rf.to_ndarray().reshape(-1))
+    finally:
+        container.close()
+    if not chunks:
+        return np.zeros(0, dtype=np.float32), t0
+    return np.concatenate(chunks).astype(np.float32), (base if base is not None else t0)
 
 
 class Transcriber:
@@ -65,13 +113,18 @@ class Transcriber:
                 progress(t1)
             return cached
 
-        clip = f"{max(0.0, t0):.3f},{max(t0, t1):.3f}"
+        # Decode ONLY [t0, t1] ourselves; whisper times come back relative to the
+        # clip start, so we shift them by `base` to restore absolute video time.
+        audio, base = _decode_range(video_path, t0, t1)
+        if audio.size == 0:
+            self._save_cache(video_path, t0, t1, [])
+            return []
         segments, _info = self.model.transcribe(
-            video_path,
+            audio,
             language=self.language or None,
             word_timestamps=True,
-            vad_filter=True,
-            clip_timestamps=clip,
+            vad_filter=True,   # now honored (only ignored when clip_timestamps set)
+            beam_size=1,       # ponytail: greedy; STT is context only, not a result
         )
         out: List[dict] = []
         for s in segments:  # generator — iterating drives the actual work
@@ -79,21 +132,21 @@ class Transcriber:
             for w in (s.words or []):
                 words.append(
                     {
-                        "start": round(float(w.start), 3),
-                        "end": round(float(w.end), 3),
+                        "start": round(float(w.start) + base, 3),
+                        "end": round(float(w.end) + base, 3),
                         "word": w.word.strip(),
                     }
                 )
             out.append(
                 {
-                    "start": round(float(s.start), 3),
-                    "end": round(float(s.end), 3),
+                    "start": round(float(s.start) + base, 3),
+                    "end": round(float(s.end) + base, 3),
                     "text": s.text.strip(),
                     "words": words,
                 }
             )
             if progress:
-                progress(float(s.end))
+                progress(float(s.end) + base)
         self._save_cache(video_path, t0, t1, out)
         return out
 

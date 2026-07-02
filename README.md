@@ -26,8 +26,8 @@ Each window is processed in this order:
 <br>영상을 고정 길이 **윈도우**(일정 간격 N프레임)로 나눠 각 윈도우를 다음 순서로
 처리합니다:
 
-1. **Detect + crop the teacher** (YOLO, 20% padding) and stitch the frames into one horizontal **strip** image.
-   <br>**교사 검출·크롭**(YOLO, 20% 패딩) 후 프레임을 가로로 이어 **strip** 이미지 생성
+1. **Detect + crop the teacher** (YOLO, 20% padding). The window's frames are kept as **individual full-resolution images** (a concatenated **strip** is also built, but only as a saved preview — the AI receives the frames separately).
+   <br>**교사 검출·크롭**(YOLO, 20% 패딩). 윈도우의 프레임들은 **개별 원본 해상도 이미지**로 유지합니다(가로로 이어붙인 **strip**도 만들지만 저장·미리보기용일 뿐, AI에는 프레임을 개별 전송)
 2. **Measure hand motion** (YOLO-pose): wrist displacement normalized by shoulder width, median-smoothed to remove keypoint jitter. A **colorbar + value** are drawn under each frame.
    <br>**손 이동량 측정**(YOLO-pose): 어깨너비로 정규화한 손목 이동량을 median 평활화로 지터 제거 후 계산. 프레임 하단에 **컬러바·수치** 표기
 3. **Grade the window** and decide whether the AI is needed:
@@ -38,8 +38,8 @@ Each window is processed in this order:
    - **A** — real motion present → AI classifies. / 실제 움직임 있음 → AI 분류
 4. **(Optional) Transcribe speech** for the window (faster-whisper) and attach the sentence/words.
    <br>**(선택) 발화 전사**(faster-whisper)로 윈도우 발화 문장/단어 부착
-5. **AI vision call** (A/B only): the AI receives the **strip image + motion colorbar + the window's speech text** and returns gesture codes + confidence. **Review flags** mark windows worth a manual check.
-   <br>**AI 비전 호출**(A·B만): AI가 **strip 이미지 + 모션 컬러바 + 해당 윈도우 발화 텍스트**를 받아 코드+신뢰도 산출. **검토 플래그**로 수동 확인 권장 구간 표시
+5. **AI vision call** (A/B only): the AI receives the window's **frames as separate ordered images** (each with its motion colorbar) **+ the per-frame motion series + the window's speech text**, and returns gesture codes + confidence. **Review flags** mark windows worth a manual check.
+   <br>**AI 비전 호출**(A·B만): AI가 윈도우의 **프레임을 순서대로 개별 이미지**(각 모션 컬러바 포함)로 받고, **프레임별 이동량 수열 + 해당 윈도우 발화 텍스트**와 함께 코드+신뢰도 산출. **검토 플래그**로 수동 확인 권장 구간 표시
 
 Colorbar legend / 컬러바 범례: **gray** still 정지 · **yellow** preparing 준비 ·
 **green** gesture start 시작 · **blue** in motion 진행. The number is the
@@ -55,17 +55,16 @@ normalized hand displacement. / 숫자는 정규화 손 이동량입니다.
 | Code | Type | AI judgment basis / AI 판단 근거 |
 |---|---|---|
 | `GT-D` | Deictic / 지시적 | Fingertip/hand extends toward a target and holds / 손끝이 특정 방향·대상으로 뻗고 정지 |
-| `GT-I` | Iconic / 상징적 | Depicts a concrete object's shape, **size**, or motion (e.g. hands/body widening for "big", hunching for "small") / 구체적 대상의 형태·**크기**·움직임 모방(예: 큼=몸·손 벌리기, 작음=움츠리기) |
+| `GT-I` | Iconic / 도상적 | Depicts a concrete object's shape, **size**, or motion (e.g. hands/body widening for "big", hunching for "small") / 구체적 대상의 형태·**크기**·움직임 모방(예: 큼=몸·손 벌리기, 작음=움츠리기) |
 | `GT-M` | Metaphoric / 은유적 | Gives an abstract idea spatial form (palm-presenting, left/right contrast, up=more, weighing options) / 추상 개념에 공간적 형태 부여(손바닥 제시, 좌우 대비, 위=증가, 저울질 등) |
 | `GT-B` | Beat / 박자적 | Short, repeated strokes in rhythm with speech / 발화 리듬에 맞춘 짧고 반복적 동작 |
-| `GT-E` | Emblematic / 관습적 | Culturally fixed sign (raised hand, thumbs-up, OK) / 문화적으로 표준화된 사인(손들기 등) |
 | `GT-N` | No gesture / 제스처 없음 | No meaningful hand/arm movement → empty list `[]` / 유의미한 손·팔 움직임 미감지 → 빈 리스트 |
 | `GT-X` | Unclassifiable / 판별 불가 | Clear movement but type undetermined / 움직임 있으나 유형 미분류 |
 
 > Size cue / 크기 표현: depicting a **real object's** size (enlarging or
 > shrinking the hands/body) is **GT-I (Iconic)**; an **abstract** magnitude with
 > no real referent (a "big" problem, great importance) is **GT-M (Metaphoric)**.
-> <br>**실물 대상**의 크기를 손·몸으로 키우거나 줄여 표현하면 **GT-I(상징적)**,
+> <br>**실물 대상**의 크기를 손·몸으로 키우거나 줄여 표현하면 **GT-I(도상적)**,
 > 실물 없이 **추상적 크기**(예: "큰" 문제, 중요성)를 표현하면 **GT-M(은유적)**.
 
 The codes are a user-editable schema (`config/gesture_schema.json`); see

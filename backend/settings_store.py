@@ -11,8 +11,8 @@ DEFAULTS = {
     "provider": "mock",          # mock | openai | anthropic | gemini
     "model": "",
     "api_key": "",
-    "interval": 0.5,             # seconds between extracted frames
-    "segment_frames": 6,         # frames combined per strip (6 * 0.5s = 3s)
+    "interval": 0.3,             # seconds between extracted frames (UPDATE.md)
+    "segment_frames": 10,        # frames per segment, sent individually (10 * 0.3s = 3s)
     "start_offset": 0,           # start analysis at this many seconds into the video
     "max_duration": 60,          # analyze only N seconds from start_offset (0 = to end)
     "min_confidence": 0.0,       # below this, the segment is forced to None (0 = off)

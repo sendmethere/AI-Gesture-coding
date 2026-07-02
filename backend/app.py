@@ -194,7 +194,7 @@ def status(since: int = 0):
 
 @app.get("/api/strip/{no}")
 def get_strip(no: int):
-    """Serve the combined 6-frame strip image that was sent to the LLM."""
+    """Serve the concatenated per-frame preview strip (frames go to the LLM individually)."""
     p = STATE["video_path"]
     if not p:
         raise HTTPException(404, "no video loaded")

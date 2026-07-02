@@ -33,6 +33,7 @@ config/settings.json
 plan.md
 plan2.md
 overview-of-development.md
+UPDATE.md
 
 # OS
 .DS_Store

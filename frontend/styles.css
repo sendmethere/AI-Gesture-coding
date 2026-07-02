@@ -229,10 +229,11 @@ body.mode-human .ai-only { display: none !important; }
 .modal-card { background: var(--card); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 20px; width: 560px; max-width: 92vw; }
 .modal-card.small { width: 380px; }
-.modal-card.wide { width: 880px; }
+.modal-card.wide { width: 1100px; max-width: 94vw; }
 .strip-view { background: #000; border: 1px solid var(--line); border-radius: 8px;
-  padding: 8px; overflow-x: auto; text-align: center; }
-.strip-view img { max-width: 100%; display: none; }
+  padding: 8px; overflow-x: auto; text-align: left; }
+/* Show frames big and scroll horizontally instead of shrinking 10 frames to fit. */
+.strip-view img { height: min(64vh, 560px); max-width: none; display: none; }
 td.view { width: 30px; text-align: center; }
 
 /* overview modal */
@@ -251,7 +252,8 @@ td.view { width: 30px; text-align: center; }
   padding: 5px 8px; line-height: 1.45; }
 .ov-speech-label { color: var(--muted); font-weight: 600; margin-right: 4px; }
 .speechmark { font-size: 11px; opacity: .8; cursor: help; }
-.ov-img { width: 100%; display: block; border-radius: 6px; background: var(--card-2); }
+.ov-imgwrap { overflow-x: auto; background: var(--card-2); border-radius: 6px; }
+.ov-img { height: 300px; max-width: none; display: block; border-radius: 6px; background: var(--card-2); }
 .ov-noimg { padding: 16px; text-align: center; border: 1px dashed var(--line); border-radius: 6px; }
 .stripbtn { background: transparent; border: none; cursor: pointer; font-size: 15px;
   opacity: .7; padding: 0; }

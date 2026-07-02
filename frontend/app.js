@@ -52,19 +52,19 @@ const STRINGS = {
     toastHumanSaved: "저장됨: {0} ({1}행)", errHumanExport: "내보내기 실패: {0}",
     hcNothing: "저장(다음)으로 표시한 구간이 없습니다.",
     hcDoneToast: "마지막 윈도우입니다.",
-    thTime: "시간", thGesture: "제스처", thConf: "신뢰도", resultsEmpty: "아직 결과가 없습니다.",
+    thTime: "시간", thGesture: "제스처", thMotion: "이동량", thConf: "신뢰도", resultsEmpty: "아직 결과가 없습니다.",
     schemaTitle: "제스처 분류체계 (gesture_schema.json)",
     schemaDesc: "name/description 을 자유롭게 추가·수정하세요. 저장 시 즉시 반영됩니다.",
     btnCancel: "취소", btnSave: "저장", editTitle: "제스처 수정", btnApply: "적용",
     stripTitle: "AI에 전송된 이미지",
-    stripDesc: "왼쪽→오른쪽 순서로 이어붙인 strip 입니다. 프레임 하단 컬러바: 회색=정지 · 노랑=준비 · 초록=시작 · 파랑=진행, 숫자는 손 이동량.",
+    stripDesc: "AI에는 각 프레임이 개별 이미지로 전송됩니다(아래는 왼쪽→오른쪽 순서로 모은 미리보기). 프레임 하단 컬러바: 회색=정지 · 노랑=준비 · 초록=시작 · 파랑=진행, 숫자는 손 이동량.",
     btnClose: "닫기", btnShowPrompt: "📝 전송 메시지 보기", btnHidePrompt: "🙈 메시지 숨기기",
     btnShowPose: "🦴 뼈대 보기", btnShowAiStrip: "🖼 AI 이미지 보기",
     poseHint: "청록선=어깨 너비(정규화 기준) · 빨강점=손목(이동량 측정 대상) · 초록선=어깨–손목. 전체 프레임에서 YOLO-pose가 인식한 골격입니다.",
     errPoseLoad: "뼈대 오버레이를 불러올 수 없습니다 (모션 필터가 꺼져 있었거나 포즈 추적에 실패한 구간입니다).",
     errPromptLoad: "전송 메시지를 불러올 수 없습니다 (이 구간은 AI 호출이 없었거나 분석 전입니다).",
     ovTitle: "Overview — AI 전송 이미지 + 코드",
-    ovDesc: "각 구간에 AI로 보낸 strip(6프레임)과 자동 코딩 결과입니다. 스크롤하여 확인하세요.",
+    ovDesc: "각 구간에 AI로 보낸 프레임(개별 전송, 미리보기로 이어붙임)과 자동 코딩 결과입니다. 스크롤하여 확인하세요.",
     // dynamic
     segments: "{0} / {1} 세그먼트", ovCount: "({0}개 구간)",
     toastSettingsSaved: "설정 저장됨", toastSchemaSaved: "분류체계 저장됨",
@@ -123,19 +123,19 @@ const STRINGS = {
     toastHumanSaved: "Saved: {0} ({1} rows)", errHumanExport: "Export failed: {0}",
     hcNothing: "No windows marked via Save/Next yet.",
     hcDoneToast: "This is the last window.",
-    thTime: "Timestamp", thGesture: "Gesture", thConf: "Conf.", resultsEmpty: "No results yet.",
+    thTime: "Timestamp", thGesture: "Gesture", thMotion: "Motion", thConf: "Conf.", resultsEmpty: "No results yet.",
     schemaTitle: "Gesture Schema (gesture_schema.json)",
     schemaDesc: "Add or edit name/description freely. Applied immediately on save.",
     btnCancel: "Cancel", btnSave: "Save", editTitle: "Edit gestures", btnApply: "Apply",
     stripTitle: "Image sent to the AI",
-    stripDesc: "Frames concatenated left → right. Bottom colorbar: gray=still · yellow=prep · green=start · blue=in motion; the number is hand displacement.",
+    stripDesc: "Each frame is sent to the AI as a separate image (below is a left → right preview). Bottom colorbar: gray=still · yellow=prep · green=start · blue=in motion; the number is hand displacement.",
     btnClose: "Close", btnShowPrompt: "📝 Show message sent", btnHidePrompt: "🙈 Hide message",
     btnShowPose: "🦴 Show skeleton", btnShowAiStrip: "🖼 Show AI image",
     poseHint: "Cyan line = shoulder width (normalizer) · red dots = wrists (displacement measured here) · green = shoulder–wrist. The skeleton YOLO-pose detected on the full frames.",
     errPoseLoad: "Could not load the skeleton overlay (motion filter was off, or pose tracking failed for this window).",
     errPromptLoad: "Could not load the message (this window had no AI call, or analysis hasn't run).",
     ovTitle: "Overview — images sent to AI + codes",
-    ovDesc: "Each segment's strip (6 frames) sent to the AI and its auto-coded result. Scroll to review.",
+    ovDesc: "Each segment's frames (sent individually, shown concatenated) and its auto-coded result. Scroll to review.",
     segments: "{0} / {1} segments", ovCount: "({0} segments)",
     toastSettingsSaved: "Settings saved", toastSchemaSaved: "Schema saved",
     errJsonParse: "JSON parse error: {0}", toastUploading: "Uploading video…",
@@ -533,6 +533,10 @@ function appendResult(row) {
   tdG.appendChild(renderTags(row.gesture));
   tdG.querySelector(".gtags").onclick = () => openEdit(row.no - 1, row.gesture);
 
+  const tdM = document.createElement("td");
+  tdM.className = "motion";
+  tdM.textContent = row.motion != null ? Number(row.motion).toFixed(2) : "";
+
   const tdC = document.createElement("td");
   tdC.className = "conf";
   tdC.textContent = row.confidence != null ? Number(row.confidence).toFixed(2) : "";
@@ -546,7 +550,7 @@ function appendResult(row) {
   btn.onclick = () => openStrip(row.no);
   tdView.appendChild(btn);
 
-  tr.append(tdNo, tdTs, tdG, tdC, tdView);
+  tr.append(tdNo, tdTs, tdG, tdM, tdC, tdView);
   tbody.appendChild(tr);
 
   // Speech transcript (STT) shown as a full-width sub-row under the result.
@@ -556,7 +560,7 @@ function appendResult(row) {
     sr.className = "speech-row";
     if (row.review_flag) sr.classList.add("flagged");
     const td = document.createElement("td");
-    td.colSpan = 5;
+    td.colSpan = 6;
     td.innerHTML = `<span class="speechmark">💬</span> ${escapeHtml(row.speech)}`;
     sr.appendChild(td);
     tbody.appendChild(sr);
@@ -757,7 +761,10 @@ async function openOverview() {
       );
     };
 
-    item.append(meta, img);
+    const imgwrap = document.createElement("div");
+    imgwrap.className = "ov-imgwrap";
+    imgwrap.appendChild(img);
+    item.append(meta, imgwrap);
     body.appendChild(item);
   });
   $("overviewModal").hidden = false;
@@ -811,10 +818,9 @@ function setMode(mode) {
 // Short, human-readable gloss per McNeill code, shown on the coding buttons.
 const CODE_GLOSS = {
   "GT-D": { ko: "지시적 · 대상/방향을 가리키고 멈춤", en: "Deictic · points at a target and holds" },
-  "GT-I": { ko: "상징적 · 구체물의 형태·크기 모방", en: "Iconic · depicts a real object's form/size" },
+  "GT-I": { ko: "도상적 · 구체물의 형태·크기 모방", en: "Iconic · depicts a real object's form/size" },
   "GT-M": { ko: "은유적 · 추상 개념을 공간으로 표현", en: "Metaphoric · an abstract idea in space" },
   "GT-B": { ko: "박자적 · 말 리듬에 맞춘 반복 동작", en: "Beat · repeated strokes with speech rhythm" },
-  "GT-E": { ko: "관습적 · 약속된 사인(손들기 등)", en: "Emblematic · a fixed conventional sign" },
   "GT-X": { ko: "판별 불가 · 움직임은 있으나 유형 불명", en: "Unclassifiable · moves, but type unclear" },
 };
 function codeGloss(g) {

@@ -161,6 +161,7 @@
               <th>No</th>
               <th data-i18n="thTime">Timestamp</th>
               <th data-i18n="thGesture">Gesture</th>
+              <th data-i18n="thMotion">Motion</th>
               <th data-i18n="thConf">Conf.</th>
               <th></th>
             </tr>
@@ -244,7 +245,7 @@
   <div id="stripModal" class="modal" hidden>
     <div class="modal-card wide">
       <h3><span data-i18n="stripTitle">AI에 전송된 이미지</span> — <span id="stripLabel"></span></h3>
-      <p class="muted" data-i18n="stripDesc">왼쪽→오른쪽, 0.5초 간격 6프레임(=3초)을 이어붙인 strip 입니다.</p>
+      <p class="muted" data-i18n="stripDesc">AI에는 각 프레임이 개별 이미지로 전송됩니다(아래는 0.3초 간격 10프레임=3초를 모은 미리보기).</p>
       <div class="strip-view"><img id="stripImg" alt="strip" /></div>
       <p id="stripPoseHint" class="muted" data-i18n="poseHint" hidden>청록선=어깨 너비(정규화 기준) · 빨강점=손목(이동량 측정 대상) · 초록선=어깨–손목. 전체 프레임에서 YOLO-pose가 인식한 골격입니다.</p>
       <div id="stripError" class="error"></div>
@@ -264,7 +265,7 @@
         <h3><span data-i18n="ovTitle">Overview</span> <span id="overviewCount" class="muted"></span></h3>
         <button id="overviewClose" class="btn primary" data-i18n="btnClose">닫기</button>
       </div>
-      <p class="muted" data-i18n="ovDesc">각 구간에 AI로 보낸 strip(6프레임)과 자동 코딩 결과입니다. 스크롤하여 확인하세요.</p>
+      <p class="muted" data-i18n="ovDesc">각 구간에 AI로 보낸 프레임(개별 전송, 미리보기로 이어붙임)과 자동 코딩 결과입니다. 스크롤하여 확인하세요.</p>
       <div id="overviewBody" class="overview-body"></div>
     </div>
   </div>

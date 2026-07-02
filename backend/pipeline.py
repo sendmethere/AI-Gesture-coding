@@ -2,7 +2,10 @@
 
 Flow per segment:
   extract N frames at `interval`  ->  crop teacher (YOLO/fallback)
-  -> resize + concat horizontally into a strip  ->  LLM Vision  -> result row
+  -> resize + annotate each frame  ->  LLM Vision (frames sent individually)
+  -> result row
+The annotated frames are also concatenated into one strip image, but only as a
+saved/previewable record — the LLM receives them as separate images (UPDATE.md).
 Results stream into an in-memory job that the API polls for live updates.
 """
 import io
@@ -137,8 +140,8 @@ class AnalysisJob:
             self.log(traceback.format_exc())
 
     def _analyze(self, video_path: str, settings: dict) -> None:
-        interval = float(settings.get("interval", 0.5)) or 0.5
-        seg_frames = int(settings.get("segment_frames", 6)) or 6
+        interval = float(settings.get("interval", 0.3)) or 0.3
+        seg_frames = int(settings.get("segment_frames", 10)) or 10
         provider = settings.get("provider", "mock")
         api_key = settings.get("api_key", "")
         model = settings.get("model", "")
@@ -275,16 +278,19 @@ class AnalysisJob:
             timestamps = [
                 format_ts(seg_start + f * interval) for f in range(len(crops))
             ]
-            strip = self._make_strip(
+            # Per-frame annotated images: sent to the LLM individually (each
+            # encoded at full resolution) and concatenated only for the record.
+            frame_imgs = self._frame_images(
                 crops,
                 states=(motion or {}).get("states"),
                 per_frame=(motion or {}).get("per_frame"),
                 start_frame=(motion or {}).get("start_frame", 0),
                 timestamps=timestamps,
             )
-            strip_png = self._png_bytes(strip)
+            frame_pngs = [self._png_bytes(im) for im in frame_imgs]
             if save_strips:
                 try:
+                    strip = self._concat_strip(frame_imgs)
                     strip.save(strip_dir / f"seg_{seg_index + 1:04d}.png")
                 except Exception:
                     pass
@@ -315,8 +321,8 @@ class AnalysisJob:
             else:
                 prompt_text = llm.build_prompt(schema, speech, motion_desc)
                 try:
-                    res = llm.analyze_strip(
-                        provider, api_key, model, strip_png, schema, seg_index,
+                    res = llm.analyze_frames(
+                        provider, api_key, model, frame_pngs, schema, seg_index,
                         speech=speech, motion_desc=motion_desc,
                     )
                 except Exception as e:
@@ -406,43 +412,42 @@ class AnalysisJob:
         return False
 
     # ----- imaging helpers ---------------------------------------------- #
-    def _make_strip(
+    def _frame_images(
         self,
         crops: List[np.ndarray],
         states: Optional[List[str]] = None,
         per_frame: Optional[List[float]] = None,
         start_frame: int = 0,
         timestamps: Optional[List[str]] = None,
-    ) -> Image.Image:
-        imgs = []
-        for c in crops:
+    ) -> List[Image.Image]:
+        """One annotated PIL image per frame.
+
+        Each crop is resized to STRIP_HEIGHT and, when motion data is present,
+        gets its own motion colorbar + timestamp/change label. These are the
+        images sent to the LLM individually (each encoded at full resolution),
+        and the same list is concatenated by `_make_strip` for the saved record.
+        """
+        annotate = bool(states)  # only when motion data is available
+        bar_h = BAR_H if annotate else 0
+        out: List[Image.Image] = []
+        for i, c in enumerate(crops):
             rgb = cv2.cvtColor(c, cv2.COLOR_BGR2RGB)
             im = Image.fromarray(rgb)
             w = max(1, int(im.width * (STRIP_HEIGHT / im.height)))
-            imgs.append(im.resize((w, STRIP_HEIGHT)))
-        total_w = sum(im.width for im in imgs)
+            im = im.resize((w, STRIP_HEIGHT))
+            if not annotate:
+                out.append(im)
+                continue
 
-        annotate = bool(states)  # only when motion data is available
-        bar_h = BAR_H if annotate else 0
-        strip = Image.new("RGB", (total_w, STRIP_HEIGHT + bar_h), (0, 0, 0))
-        x = 0
-        for im in imgs:
-            strip.paste(im, (x, 0))
-            x += im.width
-        if not annotate:
-            return strip
-
-        # Draw a motion colorbar + timestamp/change label under each frame.
-        draw = ImageDraw.Draw(strip)
-        x = 0
-        for i, im in enumerate(imgs):
+            canvas = Image.new("RGB", (im.width, STRIP_HEIGHT + bar_h), (0, 0, 0))
+            canvas.paste(im, (0, 0))
+            draw = ImageDraw.Draw(canvas)
             st = states[i] if i < len(states) else "still"
             if start_frame and i + 1 == start_frame:
                 st = "start"
             color = STATE_COLOR.get(st, STATE_COLOR["still"])
             draw.rectangle(
-                [x, STRIP_HEIGHT, x + im.width - 1, STRIP_HEIGHT + bar_h - 1],
-                fill=color,
+                [0, STRIP_HEIGHT, im.width - 1, STRIP_HEIGHT + bar_h - 1], fill=color
             )
             label = []
             if timestamps and i < len(timestamps):
@@ -451,14 +456,29 @@ class AnalysisJob:
                 label.append(f"{per_frame[i]:.2f}")
             if label:
                 txt = " ".join(label)
-                tx = x + 3
-                ty = STRIP_HEIGHT + 4
+                tx, ty = 3, STRIP_HEIGHT + 4
                 # outline for legibility over any bar color
                 for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
                     draw.text((tx + dx, ty + dy), txt, fill=(0, 0, 0))
                 draw.text((tx, ty), txt, fill=(255, 255, 255))
+            out.append(canvas)
+        return out
+
+    @staticmethod
+    def _concat_strip(imgs: List[Image.Image]) -> Image.Image:
+        """Concatenate per-frame images horizontally (saved record only)."""
+        total_w = sum(im.width for im in imgs)
+        h = max((im.height for im in imgs), default=STRIP_HEIGHT)
+        strip = Image.new("RGB", (total_w, h), (0, 0, 0))
+        x = 0
+        for im in imgs:
+            strip.paste(im, (x, 0))
             x += im.width
         return strip
+
+    def _make_strip(self, *args, **kwargs) -> Image.Image:
+        """Annotated per-frame images concatenated into one strip image."""
+        return self._concat_strip(self._frame_images(*args, **kwargs))
 
     @staticmethod
     def _draw_skeleton(frame: np.ndarray, pt: dict) -> None:
